@@ -41,9 +41,10 @@ body {
     min-height: 0;
 }
 
-/* Отступ сверху, чтобы опустить ниже челки, времени и Wi-Fi */
+/* Отступ сверху увеличен (как в физиологии), чтобы опустить ниже челки, времени и Wi-Fi */
 .safe-top-header {
-    padding-top: calc(env(safe-area-inset-top) + 24px);
+    padding-top: calc(env(safe-area-inset-top) + 40px);
+    padding-bottom: 12px;
 }
 
 .font-serif { font-family: 'Noto Serif', serif; }
@@ -271,8 +272,8 @@ T|БИОХИМИЯ МИНЕРАЛИЗОВАННЫХ ТКАНЕЙ
 Выберите верное утверждение.|Белок RANKL активирует преостеокласты.|Белок RANKL синтезируется остеоцитами.|Белок RANKL синтезируется остеокластами.|Белок RANKL активирует остеобласты.|0
 В комплексном лечении пародонтита используют токоферол. Какой эффект определяет лечебные свойства этого препарата?|Антиоксидантный.|Противовоспалительный.|Противоаллергический.|Прооксидантный.|0
 К развитию какого заболевания у взрослых приводит недостаточность витамина D?|Рахит.|Кальциноз.|Остеопетроз.|Остеомаляция.|3
-Базисные многоклеточные элементы участвуют в ремоделировании костной ткани. Какие клетки находятся в вершине режущего конуса базисных многоклеточных элементов?|Остеокласты.|Остеоциты.|Остеобласты.|Макрофаги.|0
-Базисные многоклеточные элементы участвуют в ремоделировании костной ткани. Какие клетки находятся в дистальной части режущего конуса базисных многоклеточных элементов?|Остеокласты.|Остеоциты.|Остеобласты.|Макрофаги.|2
+Базисные многоклеточные элементы участвуют в ремоделировании костной ткани. Какие клетки находятся в вершине режущего конуса базисных многоклеточных элементов?|Остекласты.|Остеоциты.|Остеобласты.|Макрофаги.|0
+Базисные многоклеточные элементы участвуют в ремоделировании костной ткани. Какие клетки находятся в дистальной части режущего конуса базисных многоклеточных элементов?|Остекласты.|Остеоциты.|Остеобласты.|Макрофаги.|2
 Выберите верное утверждение.|Снижение уровня половых гормонов приводит к остеопорозу.|Снижение уровня половых гормонов приводит к стимулированию включения сульфатов в молекулы ГАГ.|Снижение уровня половых гормонов приводит к стимулированию синтеза коллагена.|Снижение уровня половых гормонов приводит к повышению концентрации фосфат-ионов в крови.|0
 Выберите верное утверждение.|Паротин способствует минерализации дентина, костей и эмали.|Паротин способствует деминерализации дентина, костей и эмали.|Паротин повышает концентрацию ионов кальция в крови.|Паротин повышает концентрацию фосфат-ионов в крови.|0
 Какая минерализованная ткань является самой прочной?|Дентин зуба.|Тела длинных костей.|Эмаль зуба.|Альвеолярный отросток.|2
@@ -402,6 +403,29 @@ function init() {
     } catch(e){}
     render(); 
 }
+
+// --- IOS SWIPE BACK (СВАЙП НАЗАД ИЗ ФИЗИОЛОГИИ) ---
+document.addEventListener('touchstart', (e)=>{
+    if(e.touches[0].clientX < 40){
+        window.sx = e.touches[0].clientX;
+        window.sy = e.touches[0].clientY;
+        window.sw = true;
+    } else {
+        window.sw = false;
+    }
+}, {passive: true});
+
+document.addEventListener('touchend', (e)=>{
+    if(!window.sw) return;
+    const ex = e.changedTouches[0].clientX;
+    const ey = e.changedTouches[0].clientY;
+    if((ex - window.sx) > 60 && Math.abs(ey - window.sy) < 50){
+        if(navigator.vibrate) navigator.vibrate(10);
+        goHome();
+    }
+    window.sw = false;
+}, {passive: true});
+
 
 function toggleTheme() {
     state.isDark = !state.isDark;
@@ -545,7 +569,7 @@ function goHome() {
 function renderHeader() {
     const isHome = state.view === 'menu';
     return `
-    <div class="bg-white/95 dark:bg-black/95 backdrop-blur-md shrink-0 w-full z-30 px-4 safe-top-header pb-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors">
+    <div class="bg-white/95 dark:bg-black/95 backdrop-blur-md shrink-0 w-full z-30 px-4 safe-top-header border-b border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors">
         <div class="flex items-center gap-3">
         ${!isHome ? `
             <button onclick="goHome()" class="p-1 -ml-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-white transition-colors">
