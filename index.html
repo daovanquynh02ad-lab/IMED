@@ -35,7 +35,6 @@ theme: { extend: { colors: { gold: '#FFD700', } } }
 
 <script>
 // --- DATA PARSER ---
-// Компактный формат для хранения всех 256 вопросов: Вопрос|А|Б|В|Г|ИндексПравильного
 const rawData = `
 T|БИОХИМИЯ СОЕДИНИТЕЛЬНОЙ ТКАНИ
 Наличие какоговитамина необходимо для постсинтетической модификации коллагеновых белков?|Витамина С.|Витамина Е.|Витамина B2.|Витамина B12.|0
@@ -101,7 +100,7 @@ T|БИОХИМИЯ СОЕДИНИТЕЛЬНОЙ ТКАНИ
 Ион какого металла является коферментом коллагеназы?|Ион цинка.|Ион меди.|Ион двухвалентного железа.|Ион трёхвалентного железа.|0
 Какие ферменты участвуют в расщеплении молекул коллагена?|Щелочная фосфатаза и гиалуронидаза.|Щелочная и кислая фосфатазы.|Идуронидаза и гиалуронидаза.|Коллагеназа, неспецифические протеиназы.|3
 Выберите верное утверждение.|Коллаген гидролизуется щелочной фосфатазой.|Коллаген гидролизуется кислой фосфатазой.|Коллаген гидролизуется аденозинтрифосфатазой.|Коллаген гидролизуется металлопротеиназами.|3
-Выберите верное утверждение.|Эластаза продуцируется нейтрофилами.|Эластаза продуцируется фибробластами.|Эластаза продуцируется одонтобластами.|Эластаза продуцируется остеокластами.|0
+Выберите верное утверждение.|Эластаза продуцируется нейтрофилами.|Эластаза продуцируется фибробластами.|Эластаза продуцируется одонтобластами.|Эластаза продуцируется остекластами.|0
 Какой из типов коллагена наиболее распространён в дентине?|Коллаген IV типа.|Коллаген III типа.|Коллаген І типа.|Коллаген II типа.|2
 Выберите верное утверждение.|Протеогликаны содержат 95-98% белка.|С коровым белком протеогликанов связаны фосфолипиды.|Протеогликаны обеспечивают взаимодействие между клетками и белками соединительной ткани.|Протеогликаны содержат 2-5% углеводов.|2
 Выберите верное утверждение.|Дисахаридными компонентами хондроитин-4-сульфата являются N-ацетил-D-галактозамин-4-сульфат и D-глюкуроновая кислота.|Источником сульфогруппы при синтезе хондроитин-4-сульфата являются сульфаты.|Суммарный заряд хондроитин-4-сульфата положительный.|Хондроитин-4-сульфат является поликатионом.|0
@@ -129,7 +128,7 @@ T|БИОХИМИЯ СОЕДИНИТЕЛЬНОЙ ТКАНИ
 К какому классу белков относится остеокальцин?|Адгезивные белки.|Антиадгезивные белки.|Фибрилярные белки.|Коллагеновые белки.|0
 К какому классу белков относится матриксный gla-белок?|Адгезивные белки.|Антиадгезивные белки.|Фибрилярные белки.|Коллагеновые белки.|0
 Какое вещество является основным маркером распада коллагена?|Аллизин.|Пролин.|Гидроксипролин.|Аланин.|2
-Если в крови пациента обнаруживается повышенное содержание пролина и гидроксипролина, о нарушении обмена какого белка это может свидетельствовать?|Коллагена.|Фибриногена.|Остеопонтина.|Остеонектина.|0
+Если в крови пациента обнаруживается повышенное содержание пролина и гидроксипролина, о нарушении обмена какого белка это может свидетельствовать?|Коллагена.|Фибриногена.|Остепонтина.|Остеонектина.|0
 В каком случае соотношение гидроксипролин/пролин в крови возрастает?|При усилении распада коллагена.|При усилении синтеза коллагена.|При недостаточности гидроксилирования коллагена.|При недостаточности гликозилирования коллагена.|0
 О чём может свидетельствовать повышенное содержание десмозина и изодесмозина в сыворотке крови?|Об усиленном распаде соединительной ткани.|О нарушении гидроксилирования коллагена.|О нарушении постсинтетической модификации коллагена.|О нарушении постсинтетической модификации эластина.|0
 Укажите основной маркёр распада коллагена в сыворотке крови.|Гидроксипролин.|Пролин.|Гидроксилизин.|Лизин.|0
@@ -318,7 +317,7 @@ function parseRawData() {
                     question: parts[0].trim(),
                     options: [parts[1].trim(), parts[2].trim(), parts[3].trim(), parts[4].trim()],
                     correctIndex: parseInt(parts[5].trim(), 10),
-                    explanation: `Ответ: ${['А', 'Б', 'В', 'Г'][parseInt(parts[5].trim(), 10)]}`
+                    explanation: ""
                 });
             }
         }
@@ -455,10 +454,6 @@ function checkAnswer() {
     };
 
     render();
-    setTimeout(() => {
-        const el = document.getElementById('explanation-block');
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 50);
 }
 
 function nextQuestion() {
@@ -693,17 +688,6 @@ function renderLearn() {
                     </div>`;
                 }).join('')}
                 </div>
-                ${!state.hideAnswersInLearn ? `
-                <button onclick="state.expandedExplanationId = '${q.id}' === '${state.expandedExplanationId}' ? null : '${q.id}'; render()" class="w-full text-left bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 border-t border-black dark:border-slate-800 p-3 transition-colors group">
-                    <div class="flex items-center gap-2 text-xs font-bold text-slate-500 group-hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200">
-                        <i data-lucide="zap" class="w-3 h-3"></i>
-                        ${state.expandedExplanationId === q.id ? 'Скрыть пояснение' : 'Почему так?'}
-                    </div>
-                    ${state.expandedExplanationId === q.id ? `
-                    <div class="mt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed animate-fade-in font-sans">
-                        ${q.explanation}
-                    </div>` : ''}
-                </button>` : ''}
             </div>`).join('')}
         </div>
     </div>`;
@@ -770,16 +754,6 @@ function renderQuiz() {
                 return `<button onclick="handleOptionSelect(${idx})" ${state.isAnswerChecked ? 'disabled' : ''} class="${btnStyle}">${opt}</button>`;
             }).join('')}
             </div>
-            ${state.isAnswerChecked ? `
-            <div id="explanation-block" class="mt-6 p-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm animate-fade-in">
-                <div class="flex items-start gap-3">
-                    <i data-lucide="zap" class="w-5 h-5 text-yellow-500 shrink-0 mt-0.5"></i>
-                    <div class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                        <span class="font-black block text-slate-900 dark:text-white mb-1">Разбор</span>
-                        ${question.explanation}
-                    </div>
-                </div>
-            </div>` : ''}
         </div>
         <div class="fixed bottom-0 left-0 w-full bg-white/80 dark:bg-black/80 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 p-4 safe-area-pb z-20 transition-colors">
             <div class="max-w-xl mx-auto">
@@ -906,19 +880,25 @@ function renderCards() {
         <div class="flex-1 relative perspective-1000 max-w-sm mx-auto w-full max-h-[500px]">
             <div id="flashcard" class="w-full h-full relative" style="transform: translate(0px, 0px);">
                 <div id="card-inner" onclick="toggleFlip()" class="w-full h-full relative preserve-3d cursor-pointer transition-transform duration-500 ${state.isFlipped ? 'rotate-y-180' : ''}">
-                    <div class="absolute inset-0 backface-hidden flex flex-col items-center justify-center text-center p-8 rounded-[2rem] bg-white dark:bg-slate-900 shadow-2xl shadow-slate-200 dark:shadow-none border border-slate-200 dark:border-slate-800">
-                        <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6 bg-slate-50 dark:bg-slate-800 px-3 py-1 rounded-full truncate max-w-full">${question.topic}</div>
-                        <h3 class="text-xl font-bold text-slate-900 dark:text-white leading-snug select-none">${question.question}</h3>
-                        <div class="mt-auto text-slate-400 text-xs font-bold flex items-center gap-1 opacity-50">
-                            <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Нажми
+                    <div class="absolute inset-0 backface-hidden flex flex-col p-6 rounded-[2rem] bg-white dark:bg-slate-900 shadow-2xl shadow-slate-200 dark:shadow-none border border-slate-200 dark:border-slate-800 overflow-y-auto no-scrollbar">
+                        <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 bg-slate-50 dark:bg-slate-800 px-3 py-1 rounded-full truncate max-w-full w-fit mx-auto text-center">${question.topic}</div>
+                        <h3 class="text-xl font-bold text-slate-900 dark:text-white leading-snug select-none text-center mb-4">${question.question}</h3>
+                        
+                        <div class="w-full flex flex-col gap-2 text-left mt-auto">
+                            ${question.options.map((opt, idx) => `
+                                <div class="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700/50 select-none">
+                                    ${idx + 1}) ${opt}
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <div class="mt-4 pt-2 text-slate-400 text-xs font-bold flex items-center justify-center gap-1 opacity-50">
+                            <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Нажми, чтобы увидеть ответ
                         </div>
                     </div>
                     <div class="absolute inset-0 backface-hidden bg-black dark:bg-white p-8 flex flex-col items-center justify-center text-center text-white dark:text-black rounded-[2rem] shadow-2xl rotate-y-180">
                         <h3 class="text-[10px] font-bold opacity-50 uppercase tracking-widest mb-4">Ответ</h3>
-                        <div class="text-2xl font-bold mb-8 text-[#FFD700] dark:text-blue-600 select-none leading-snug">${question.options[question.correctIndex]}</div>
-                        <div class="text-sm opacity-80 leading-relaxed font-medium select-none">
-                            ${question.explanation}
-                        </div>
+                        <div class="text-xl sm:text-2xl font-bold text-[#FFD700] dark:text-blue-600 select-none leading-snug">${question.options[question.correctIndex]}</div>
                     </div>
                 </div>
             </div>
