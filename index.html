@@ -1506,16 +1506,30 @@ function animateCard(dir) {
 function toggleFlip() { haptic('light'); state.isFlipped = !state.isFlipped; const inner = document.getElementById('card-inner'); if (inner) { if (state.isFlipped) inner.classList.add('rotate-y-180'); else inner.classList.remove('rotate-y-180'); } }
 
 // --- ЗАПУСК ПРИЛОЖЕНИЯ ---
-if (USE_AUTH) {
-    videoFinished = true;
-    document.getElementById('auth-screen').classList.remove('hidden-force');
-    document.getElementById('app').classList.add('hidden-force');
-    performAccessCheck();
-} else {
-    loadLocalFallback();
-    processQuestions();
-    initApp();
-}
+// --- ПАРАЛЛЕЛЬНЫЙ ЗАПУСК: ИНТРО ИГРАЕТ, ДОСТУП ПРОВЕРЯЕТСЯ В ФОНЕ ---
+window.addEventListener('DOMContentLoaded', () => {
+    const intro = document.getElementById('intro-layer');
+    const video = document.getElementById('intro-video');
+
+    // 1. Показываем интро и сразу запускаем видео
+    if (intro && video) {
+        intro.classList.remove('hidden-force');
+        video.muted = true; // Для автовоспроизведения на смартфонах
+        video.play().catch(() => {});
+        video.onended = () => { finishVideo(); };
+    } else {
+        finishVideo();
+    }
+
+    // 2. Параллельно в фоне проверяем доступ
+    if (USE_AUTH) {
+        performAccessCheck();
+    } else {
+        loadLocalFallback();
+        processQuestions();
+        initApp();
+    }
+});
 </script>
 </body>
 </html>
