@@ -15,7 +15,7 @@
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
         html { height: 100dvh; background-color: #f8fafc; overscroll-behavior: none; }
         body { position: fixed; top: 0; left: 0; width: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; background-color: #f8fafc; color: #000; font-family: 'Inter', sans-serif; }
-        .dark html, .dark body { background-color: #000; }
+        html.dark, html.dark body { background-color: #000; }
         #mobile-wrapper { width: 100%; max-width: 480px; height: 100%; background-color: #fff; margin: 0 auto; display: flex; flex-direction: column; position: relative; }
         @media (min-width: 481px) { #mobile-wrapper { box-shadow: 0 0 50px rgba(0,0,0,0.12); } }
         .dark #mobile-wrapper { background-color: #000; }
@@ -534,6 +534,43 @@ try {
     }
 } catch(e){}
 
+
+function safeIcons() { try { if (window.lucide) lucide.createIcons(); } catch(e) {} }
+
+function loadLocalFallback() {
+    try {
+        const raw = localStorage.getItem(`${STORAGE_PREFIX}progress_${currentUserId}`);
+        if (raw) {
+            const p = JSON.parse(raw);
+            if (p && typeof p === 'object') {
+                if (p.progress) state.userProgress = p.progress;
+                if (p.selectedTopics) state.selectedTopics = p.selectedTopics;
+            }
+        }
+    } catch(e) {}
+}
+
+let saveTimer = null;
+function saveProgressToCloud() {
+    try {
+        localStorage.setItem(`${STORAGE_PREFIX}progress_${currentUserId}`, JSON.stringify({ progress: state.userProgress, selectedTopics: state.selectedTopics }));
+    } catch(e) {}
+    if (!currentUserId || window.location.protocol === 'file:') return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+        if (isSaving) return;
+        isSaving = true;
+        try {
+            await fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST', mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({ action: 'save', userId: currentUserId, progress: state.userProgress, selectedTopics: state.selectedTopics })
+            });
+        } catch(e) {}
+        isSaving = false;
+    }, 800);
+}
+
 function haptic(type='light') {
     try {
         if(tg && tg.HapticFeedback) {
@@ -544,7 +581,7 @@ function haptic(type='light') {
 }
 
 document.addEventListener('touchstart', (e)=>{if(e.touches[0].clientX<40){window.sx=e.touches[0].clientX;window.sy=e.touches[0].clientY;window.sw=true}else{window.sw=false}},{passive:true});
-document.addEventListener('touchend', (e)=>{if(!window.sw)return;const ex=e.changedTouches[0].clientX;const ey=e.changedTouches[0].clientY;if((ex-window.sx)>60 && Math.abs(ey-window.sy)<50){haptic('medium');goHome();}window.sw=false},{passive:true});
+document.addEventListener('touchend', (e)=>{if(!window.sw)return;const ex=e.changedTouches[0].clientX;const ey=e.changedTouches[0].clientY;if((ex-window.sx)>60 && Math.abs(ey-window.sy)<50 && state.view!=='menu' && !state.showFilterModal && !state.showResetModal && !state.showConfirmResetDialog){haptic('medium');goHome();}window.sw=false},{passive:true});
 
 function escapeHtml(t) { if(!t)return""; return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
@@ -683,7 +720,7 @@ async function performAccessCheck() {
         
         if (data.allowed) { 
             accessData = data; 
-            if (data.progress) state.userProgress = data.progress;
+            if (data.progress && Object.keys(data.progress).length) state.userProgress = Object.assign({}, state.userProgress, data.progress);
             if (data.selectedTopics) state.selectedTopics = data.selectedTopics;
             
             processQuestions();
@@ -703,6 +740,7 @@ async function performAccessCheck() {
 }
 
 // ПЛАВНЫЙ ПЕРЕХОД: НИКАКИХ ЭКРАНОВ ЗАГРУЗКИ ПОСЛЕ ВИДЕО
+let appStarted = false;
 function checkStateTransition() {
     // Ждем, пока видео ТОЧНО закончится
     if (!videoFinished) return; 
@@ -729,13 +767,14 @@ function checkStateTransition() {
                 <button onclick="try{window.Telegram.WebApp.close()}catch(e){}" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click mb-3">🧾 Отправить чек в бота</button>
                 <a href="https://t.me/stewonly" class="w-full max-w-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3.5 rounded-2xl font-bold text-sm text-center btn-click">Написать @stewonly</a>
             </div>`;
-            lucide.createIcons();
+            safeIcons();
         }
         return; 
     }
 
     // Если доступ есть — плавно растворяем видео и сразу открываем меню
-    if (accessData) {
+    if (accessData && !appStarted) {
+        appStarted = true;
         if (auth) auth.classList.add('hidden-force');
         if (intro) { 
             intro.style.transition = 'opacity 0.3s ease'; 
@@ -866,20 +905,20 @@ function updateTopicListUI(mode) {
     
     const apply = document.getElementById(mode === 'filter' ? 'apply-btn' : 'confirm-reset-btn'); 
     if(apply) apply.innerText = mode === 'filter' ? `Применить (${selectedArr.length})` : `Сбросить (${selectedArr.length})`;
-    lucide.createIcons();
+    safeIcons();
 }
 
 function updateSelectAllButtonUI(mode) {
     const btn = document.getElementById(mode === 'filter' ? 'select-all-btn' : 'reset-select-all-btn'); if(!btn) return;
     const all = (mode === 'filter' ? state.selectedTopics : state.resetSelectedTopics).length === availableTopics.length;
     btn.innerHTML=`<span>${all?'Снять все':'Выбрать все'}</span><i data-lucide="${all?'trash-2':'layers'}" class="w-4 h-4"></i>`;
-    lucide.createIcons();
+    safeIcons();
 }
 
 function startMode(mode, resume=false) {
     haptic('medium');
     if(resume && (!state.playableQuestions || state.playableQuestions.length === 0)) resume = false;
-    if(resume && state.resumeState?.mode===mode){ state.view=mode; render(); return; }
+    if(resume && state.resumeState?.mode===mode){ state.playableQuestions = state.resumeState.questions; state.currentQuestionIndex = state.resumeState.index; state.view=mode; state.quizFinished=false; loadStateForIndex(state.currentQuestionIndex); render(); return; }
     
     let q;
     if (mode === 'mistakes') {
@@ -1139,7 +1178,7 @@ function render() {
     }
     
     if(cd && scrollTop>0 && !state.searchQuery) document.querySelector('.layout-content').scrollTop=scrollTop;
-    lucide.createIcons();
+    safeIcons();
 }
 
 function renderHeader() {
@@ -1204,7 +1243,7 @@ function renderLearnContent() {
         <div class="relative flex-1">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="search" class="w-4 h-4 text-slate-400"></i></div>
                 <input id="learn-search-input" type="text" 
-                    value="${state.searchQuery}"
+                    value="${escapeHtml(state.searchQuery)}"
                     oninput="handleSearchInput(this.value)" 
                     onkeyup="if(event.key==='Enter') this.blur()"
                     enterkeyhint="search"
@@ -1505,24 +1544,33 @@ function toggleFlip() { haptic('light'); state.isFlipped = !state.isFlipped; con
 window.addEventListener('DOMContentLoaded', () => {
     const intro = document.getElementById('intro-layer');
     const video = document.getElementById('intro-video');
+    let done = false;
+    const finishOnce = () => { if (done) return; done = true; finishVideo(); };
 
-    // 1. Показываем интро и сразу запускаем видео
     if (intro && video) {
         intro.classList.remove('hidden-force');
-        video.muted = true; // Для автовоспроизведения на смартфонах
-        video.play().catch(() => {});
-        video.onended = () => { finishVideo(); };
+        video.muted = true;
+        const src = video.querySelector('source');
+        if (src) src.addEventListener('error', finishOnce);
+        video.addEventListener('error', finishOnce);
+        video.addEventListener('ended', finishOnce);
+        video.addEventListener('loadedmetadata', () => {
+            if (isFinite(video.duration)) setTimeout(finishOnce, (video.duration + 1) * 1000);
+        });
+        setTimeout(() => { if (video.readyState < 1) finishOnce(); }, 4000);
+        const pr = video.play();
+        if (pr && pr.catch) pr.catch(finishOnce);
     } else {
-        finishVideo();
+        finishOnce();
     }
 
-    // 2. Параллельно в фоне проверяем доступ
     if (USE_AUTH) {
         performAccessCheck();
     } else {
         loadLocalFallback();
         processQuestions();
-        initApp();
+        accessData = { allowed: true };
+        checkStateTransition();
     }
 });
 </script>
