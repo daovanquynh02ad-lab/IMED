@@ -66,7 +66,7 @@
 <body class="bg-slate-50 text-slate-900 transition-colors duration-300 selection:bg-[#FFD700] selection:text-black">
 
 <div id="mobile-wrapper" class="bg-slate-50 dark:bg-black">
-   <div id="intro-layer" class="hidden-force" onclick="finishVideo()">
+<div id="intro-layer" class="hidden-force">
         <video id="intro-video" playsinline preload="auto" muted autoplay><source src="intro.mp4" type="video/mp4"></video>
     </div>
     
@@ -635,122 +635,120 @@ let accessCheckAttempts = 0;
 async function performAccessCheck() {
     currentUserId = getTelegramUserId();
 
-    if (!currentUserId && accessCheckAttempts < 10) {
+    // ⚡ 1. МГНОВЕННЫЙ ВХОД ИЗ ПАМЯТИ ТЕЛЕФОНА (0.01 сек!)
+    const ck = `${STORAGE_PREFIX}access_${currentUserId}`; 
+    const cached = localStorage.getItem(ck);
+    if (cached) {
+        try {
+            const p = JSON.parse(cached);
+            if (p && p.allowed) {
+                accessData = p;
+                loadLocalFallback();
+                processQuestions();
+                checkStateTransition(); // Открывает приложение сразу после видео!
+            }
+        } catch(e) {}
+    }
+
+    if (!currentUserId && accessCheckAttempts < 5) {
         accessCheckAttempts++;
-        setTimeout(performAccessCheck, 500);
+        setTimeout(performAccessCheck, 150);
         return;
     }
 
-    if(window.location.protocol==='file:'){ 
-        accessData={allowed:true, progress:{}};
+    if (window.location.protocol === 'file:') { 
+        accessData = { allowed: true, progress: {} };
         loadLocalFallback();
         processQuestions();
         checkStateTransition();
         return;
     }
     
-    if(!currentUserId){ 
-        accessError={type:'browser',msg:'Не удалось определить пользователя. Откройте приложение внутри Telegram.'};
+    if (!currentUserId) { 
+        accessError = { type: 'browser', msg: 'Откройте приложение внутри Telegram бота.' };
         checkStateTransition();
         return;
     }
     
-    const ck = `${STORAGE_PREFIX}access_${currentUserId}`; 
+    // ⚡ 2. ФОНОВАЯ ПРОВЕРКА ЧЕРЕЗ СЕРВЕР (Идет пока играет видео)
     const tgUser = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) || {};
     const uName = encodeURIComponent(tgUser.first_name || "Студент");
     const uHandle = encodeURIComponent(tgUser.username || "");
 
     try {
-        const ctrl=new AbortController(); setTimeout(()=>ctrl.abort(),15000);
-        const res=await fetch(`${GOOGLE_SCRIPT_URL}?userId=${currentUserId}&name=${uName}&username=${uHandle}`,{signal:ctrl.signal});
-        const data=await res.json();
+        const ctrl = new AbortController();
+        setTimeout(() => ctrl.abort(), 8000);
+        const res = await fetch(`${GOOGLE_SCRIPT_URL}?userId=${currentUserId}&name=${uName}&username=${uHandle}`, { signal: ctrl.signal });
+        const data = await res.json();
         
-        if(data.allowed){ 
-            accessData=data; 
+        if (data.allowed) { 
+            accessData = data; 
             if (data.progress) state.userProgress = data.progress;
-            else { const localP=localStorage.getItem(`${STORAGE_PREFIX}progress_${currentUserId}`); if(localP) state.userProgress=JSON.parse(localP); }
-            
             if (data.selectedTopics) state.selectedTopics = data.selectedTopics;
-            else { const localT=localStorage.getItem(`${STORAGE_PREFIX}topics_${currentUserId}`); if(localT) state.selectedTopics=JSON.parse(localT); }
             
             processQuestions();
-            localStorage.setItem(ck,JSON.stringify(data)); 
-            localStorage.setItem(`${STORAGE_PREFIX}progress_${currentUserId}`, JSON.stringify(state.userProgress));
-            localStorage.setItem(`${STORAGE_PREFIX}topics_${currentUserId}`, JSON.stringify(state.selectedTopics));
+            localStorage.setItem(ck, JSON.stringify(data)); 
+            saveProgressToCloud();
         } else {
             localStorage.removeItem(ck);
-            accessError={type:'denied', msg:'Для открытия доступа отправьте чек об оплате (499 ₽) прямо в чат бота.'};
+            accessError = { type: 'denied', msg: 'Для открытия доступа отправьте чек об оплате (499 ₽) прямо в чат бота.' };
         }
-    } catch(e){ 
-        const c = localStorage.getItem(ck);
-        const localP = localStorage.getItem(`${STORAGE_PREFIX}progress_${currentUserId}`);
-        const localT = localStorage.getItem(`${STORAGE_PREFIX}topics_${currentUserId}`);
-        if(c){ 
-            try{ 
-                const p=JSON.parse(c); 
-                if(p.allowed){ 
-                    accessData=p; 
-                    if (localP) state.userProgress = JSON.parse(localP);
-                    if (localT) state.selectedTopics = JSON.parse(localT);
-                    processQuestions(); 
-                } 
-            } catch(err){ localStorage.removeItem(ck); } 
+    } catch(e) { 
+        if (!accessData) {
+            accessError = { type: 'network', msg: 'Ошибка сети. Проверьте интернет.' };
         }
-        if (!accessData) accessError={type:'network', msg:'Ошибка сети. Проверьте интернет.'}; 
     }
     
-    if (!state.userProgress) state.userProgress = {};
-    if (!state.selectedTopics) state.selectedTopics = [];
     checkStateTransition();
 }
 
-function loadLocalFallback() {
-    currentUserId = getTelegramUserId() || 'local_user';
-    try {
-        const localP = localStorage.getItem(`${STORAGE_PREFIX}progress_${currentUserId}`);
-        if (localP) state.userProgress = JSON.parse(localP);
-        const localT = localStorage.getItem(`${STORAGE_PREFIX}topics_${currentUserId}`);
-        if (localT) state.selectedTopics = JSON.parse(localT);
-    } catch(e) {}
-}
-
-async function saveProgressToCloud() {
-    const uid = currentUserId || 'local_user';
-    try {
-        localStorage.setItem(`${STORAGE_PREFIX}progress_${uid}`, JSON.stringify(state.userProgress));
-        localStorage.setItem(`${STORAGE_PREFIX}topics_${uid}`, JSON.stringify(state.selectedTopics));
-    } catch(e) {}
-
-    if (!USE_AUTH || !currentUserId || !accessData || isSaving) return;
-    isSaving = true;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    try {
-        await fetch(GOOGLE_SCRIPT_URL, {
-            method: 'POST', mode: 'no-cors',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ userId: currentUserId, progress: state.userProgress, selectedTopics: state.selectedTopics }),
-            signal: controller.signal
-        });
-    } catch(e) { } finally { clearTimeout(timeoutId); isSaving = false; }
-}
-
+// ПЛАВНЫЙ ПЕРЕХОД: НИКАКИХ ЭКРАНОВ ЗАГРУЗКИ ПОСЛЕ ВИДЕО
 function checkStateTransition() {
-    if(!videoFinished && !accessError) return; 
-    const intro=document.getElementById('intro-layer'), auth=document.getElementById('auth-screen'), block=document.getElementById('block-screen'), app=document.getElementById('app');
-    if (videoFinished && !accessData && !accessError) { if(intro) intro.style.display='none'; auth.classList.remove('hidden-force'); return; }
-    if(accessError){ 
-        if(intro) intro.style.display='none'; 
-        auth.classList.add('hidden-force'); block.classList.remove('hidden-force');
-        let icon='alert-triangle', title='Ошибка', colorClass='text-rose-500', bgClass='bg-rose-100 dark:bg-rose-900/30';
-        if(accessError.type==='denied'){icon='lock';title='Доступ закрыт';} else if(accessError.type==='browser'){icon='smartphone';title='Только в Telegram';}
-        block.innerHTML=`<div class="flex flex-col items-center justify-center h-full animate-fade-in px-4"><div class="${bgClass} p-6 rounded-full mb-6"><i data-lucide="${icon}" class="w-16 h-16 ${colorClass}"></i></div><h1 class="text-3xl font-black text-slate-900 dark:text-white mb-4">${title}</h1><p class="text-slate-500 dark:text-slate-400 mb-8 max-w-sm font-medium leading-relaxed">${accessError.msg}</p>${accessError.type==='denied'?`<button onclick="try{window.Telegram.WebApp.close()}catch(e){}" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold text-center shadow-lg btn-click transition-transform active:scale-95 mb-3">🧾 Отправить чек в бота</button><a href="https://t.me/stewonly" class="w-full max-w-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3.5 rounded-2xl font-bold text-sm text-center btn-click">Написать @stewonly</a>`:`<button onclick="window.location.reload()" class="w-full max-w-xs bg-slate-900 dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click">Попробовать снова</button>`}</div>`;
-        lucide.createIcons(); return; 
+    // Ждем, пока видео ТОЧНО закончится
+    if (!videoFinished) return; 
+
+    const intro = document.getElementById('intro-layer');
+    const auth = document.getElementById('auth-screen');
+    const block = document.getElementById('block-screen');
+    const app = document.getElementById('app');
+
+    // Если нет доступа
+    if (accessError) { 
+        if (intro) intro.style.display = 'none'; 
+        if (auth) auth.classList.add('hidden-force'); 
+        if (block) {
+            block.classList.remove('hidden-force');
+            let icon = 'lock', title = 'Доступ закрыт';
+            block.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full animate-fade-in px-4">
+                <div class="bg-rose-100 dark:bg-rose-900/30 p-6 rounded-full mb-6">
+                    <i data-lucide="${icon}" class="w-16 h-16 text-rose-500"></i>
+                </div>
+                <h1 class="text-3xl font-black text-slate-900 dark:text-white mb-4">${title}</h1>
+                <p class="text-slate-500 dark:text-slate-400 mb-8 max-w-sm font-medium leading-relaxed">${accessError.msg}</p>
+                <button onclick="try{window.Telegram.WebApp.close()}catch(e){}" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click mb-3">🧾 Отправить чек в бота</button>
+                <a href="https://t.me/stewonly" class="w-full max-w-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3.5 rounded-2xl font-bold text-sm text-center btn-click">Написать @stewonly</a>
+            </div>`;
+            lucide.createIcons();
+        }
+        return; 
     }
-    if(accessData){
-        if(intro){ intro.style.transition='opacity 0.3s'; intro.style.opacity='0'; setTimeout(()=>{intro.style.display='none';auth.classList.add('hidden-force');app.classList.remove('hidden-force');initApp();},300); } 
-        else { auth.classList.add('hidden-force'); app.classList.remove('hidden-force'); initApp(); }
+
+    // Если доступ есть — плавно растворяем видео и сразу открываем меню
+    if (accessData) {
+        if (auth) auth.classList.add('hidden-force');
+        if (intro) { 
+            intro.style.transition = 'opacity 0.3s ease'; 
+            intro.style.opacity = '0'; 
+            setTimeout(() => {
+                intro.style.display = 'none';
+                app.classList.remove('hidden-force');
+                initApp();
+            }, 300); 
+        } else { 
+            app.classList.remove('hidden-force'); 
+            initApp(); 
+        }
     }
 }
 
