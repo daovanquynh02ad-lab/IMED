@@ -3,129 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
-    
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    
     <title>Imed — Патофизиология (1 Коллоквиум)</title>
-    
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=Noto+Serif:wght@700&display=swap" rel="stylesheet">
-
     <style>
-        /* --- БАЗА TELEGRAM MINI APP --- */
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-
-        html {
-            height: 100dvh;
-            background-color: #f8fafc; 
-            overscroll-behavior: none;
-        }
-        body {
-            position: fixed; 
-            top: 0; left: 0;
-            width: 100%; 
-            height: 100dvh;
-            overflow: hidden; 
-            overscroll-behavior: none;
-            background-color: #f8fafc;
-            color: #000; font-family: 'Inter', sans-serif;
-        }
+        html { height: 100dvh; background-color: #f8fafc; overscroll-behavior: none; }
+        body { position: fixed; top: 0; left: 0; width: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; background-color: #f8fafc; color: #000; font-family: 'Inter', sans-serif; }
         .dark html, .dark body { background-color: #000; }
-
-        #mobile-wrapper {
-            width: 100%; max-width: 480px; height: 100%;
-            background-color: #fff; margin: 0 auto;
-            display: flex; flex-direction: column; position: relative;
-        }
+        #mobile-wrapper { width: 100%; max-width: 480px; height: 100%; background-color: #fff; margin: 0 auto; display: flex; flex-direction: column; position: relative; }
         @media (min-width: 481px) { #mobile-wrapper { box-shadow: 0 0 50px rgba(0,0,0,0.12); } }
         .dark #mobile-wrapper { background-color: #000; }
-
-        /* --- ХЕДЕР --- */
-        .layout-header {
-            flex-shrink: 0;
-            width: 100%;
-            padding-top: calc(env(safe-area-inset-top) + 40px);
-            padding-bottom: 12px;
-            padding-left: 16px;
-            padding-right: 16px;
-            background-color: inherit;
-            z-index: 50;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border-bottom: 1px solid rgba(0,0,0,0.05);
-        }
+        .layout-header { flex-shrink: 0; width: 100%; padding-top: calc(env(safe-area-inset-top) + 40px); padding-bottom: 12px; padding-left: 16px; padding-right: 16px; background-color: inherit; z-index: 50; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(0,0,0,0.05); }
         .dark .layout-header { border-bottom: 1px solid rgba(255,255,255,0.1); }
-
-        /* --- КОНТЕНТ --- */
-        .layout-content {
-            flex: 1; 
-            overflow-y: auto; 
-            -webkit-overflow-scrolling: touch;
-            width: 100%; 
-            position: relative; 
-            padding: 0;
-            padding-bottom: 100px; 
-        }
-        #app[data-view="learn"] .layout-content {
-            padding-bottom: 0 !important;
-        }
+        .layout-content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; width: 100%; position: relative; padding: 0; padding-bottom: 100px; }
+        #app[data-view="learn"] .layout-content { padding-bottom: 0 !important; }
         .layout-content::-webkit-scrollbar { display: none; }
-
-        /* --- ФУТЕР --- */
-        .layout-footer {
-            position: absolute; bottom: 0; left: 0; width: 100%;
-            padding: 12px 16px; 
-            padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
-            background-color: inherit; z-index: 100;
-            border-top: 1px solid rgba(0,0,0,0.05);
-            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-        }
+        .layout-footer { position: absolute; bottom: 0; left: 0; width: 100%; padding: 12px 16px; padding-bottom: calc(env(safe-area-inset-bottom) + 12px); background-color: inherit; z-index: 100; border-top: 1px solid rgba(0,0,0,0.05); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
         .dark .layout-footer { border-top: 1px solid rgba(255,255,255,0.1); }
-
-        /* --- ПОИСК И ПОДСВЕТКА КОНСПЕКТА (#FFD700) --- */
-        mark { 
-            background-color: #3b82f6; 
-            color: white; 
-            border-radius: 4px; 
-            padding: 0 2px;
-            font-weight: bold;
-        }
+        mark { background-color: #3b82f6; color: white; border-radius: 4px; padding: 0 2px; font-weight: bold; }
         .dark mark { background-color: #3b82f6; color: white; }
-
         .correct-answer { background-color: #FFD700 !important; color: #000 !important; }
         .dark .correct-answer { background-color: #FFD700 !important; color: #000 !important; }
-
-        .correct-answer mark { 
-            background-color: #1d4ed8 !important; 
-            color: white !important;
-            box-shadow: 0 0 0 1px white; 
-        }
-        
-        .learn-container.hide-answers .correct-answer { 
-            background-color: #fff !important; color: #000 !important; 
-        }
-        .dark .learn-container.hide-answers .correct-answer { 
-            background-color: #000 !important; color: #cbd5e1 !important; 
-        }
-
-        .active-search-result { 
-            box-shadow: 0 0 0 3px #3b82f6 !important; 
-            border-color: #3b82f6 !important;
-        }
-
-        .search-controls {
-            display: flex; align-items: center; gap: 2px;
-            opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
-        }
+        .correct-answer mark { background-color: #1d4ed8 !important; color: white !important; box-shadow: 0 0 0 1px white; }
+        .learn-container.hide-answers .correct-answer { background-color: #fff !important; color: #000 !important; }
+        .dark .learn-container.hide-answers .correct-answer { background-color: #000 !important; color: #cbd5e1 !important; }
+        .active-search-result { box-shadow: 0 0 0 3px #3b82f6 !important; border-color: #3b82f6 !important; }
+        .search-controls { display: flex; align-items: center; gap: 2px; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; }
         .search-controls.visible { opacity: 1; pointer-events: auto; }
         .search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
-
-        /* --- АНИМАЦИИ И 3D КАРТОЧКИ --- */
         .perspective-1000 { perspective: 1000px; }
         .preserve-3d { transform-style: preserve-3d; }
         .backface-hidden { -webkit-backface-visibility: hidden; backface-visibility: hidden; transform: translate3d(0,0,0); }
@@ -140,13 +51,7 @@
         .animate-pulse-text { animation: pulseText 2s infinite ease-in-out; }
         @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .animate-slide-up { animation: slideUp 0.3s ease-out forwards; }
-
-        /* ЭКРАНЫ АВТОРИЗАЦИИ */
-        #intro-layer, #auth-screen, #block-screen {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 9999;
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-        }
+        #intro-layer, #auth-screen, #block-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         #intro-layer { background: #000; }
         #auth-screen, #block-screen { background-color: inherit; }
         #intro-video { width: 100%; height: 100%; object-fit: cover; position: absolute; }
@@ -154,12 +59,8 @@
         .hidden-force { display: none !important; }
         #app { width: 100%; height: 100%; display: flex; flex-direction: column; }
     </style>
-    
     <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: { extend: { colors: { gold: '#FFD700' } } }
-        }
+        tailwind.config = { darkMode: 'class', theme: { extend: { colors: { gold: '#FFD700' } } } }
     </script>
 </head>
 <body class="bg-slate-50 text-slate-900 transition-colors duration-300 selection:bg-[#FFD700] selection:text-black">
@@ -184,14 +85,14 @@
 
 <script>
 // =========================================================================
-// НАСТРОЙКИ ПРИЛОЖЕНИЯ (ДЛЯ ПРОДАЖИ ПЕРЕКЛЮЧИ USE_AUTH НА true)
+// НАСТРОЙКИ АВТОРИЗАЦИИ IMED (УЖЕ ПОДКЛЮЧЕНО К ТВОЕЙ ТАБЛИЦЕ)
 // =========================================================================
-const USE_AUTH = false; // Поставь true, когда зальешь на хостинг с Google Таблицей и intro.mp4
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzaq2gIrn50O6-2_8DH5Gy-1UpeT8BYFwcPvIasPKfBXT5shXnBSPbTWWPsOOUkor78/exec";
+const USE_AUTH = true;
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzn9ttSMjIDz041CJWVnbla1pdf7qCh50hb8XUoybc_Le2iND9O57OuJ4IK9Zx5Uv52/exec";
 const STORAGE_PREFIX = "imed_pathophys_col1_";
 
 // =========================================================================
-// ПОЛНАЯ БАЗА ВОПРОСОВ ПАТОФИЗИОЛОГИИ (КОЛЛОКВИУМ №1 — 411 ВОПРОСОВ: 355 ОБЩИХ + 56 СТОМАТОЛОГИЯ)
+// ПОЛНАЯ БАЗА ВОПРОСОВ ПАТОФИЗИОЛОГИИ (411 ВОПРОСОВ: 355 ОБЩИХ + 56 СТОМАТОЛОГИЯ)
 // =========================================================================
 const RAW_PATHOPHYS_QUESTIONS = [
 {id:1,m:1,q:"Что такое «здоровье»?",o:["Это состояние полного физического, морального и социального благополучия индивида","Это состояние только полного отсутствия у индивида болезней и физических дефектов его индивидуального развития","Это состояние оптимальной приспособленности (адаптации) организма к окружающей природной и социальной среде его обитания","Это состояние оптимального выполнения организмом его биологических и социальных (общественных) функций"],c:[0,2,3]},
@@ -373,6 +274,9 @@ const RAW_PATHOPHYS_QUESTIONS = [
 {id:177,m:0,q:"Что такое иммунитет?",o:["Способ защиты организма от воздействия патогенного температурного фактора","Способ защиты организма от патогенных смещений КОС","Способ защиты организма от живых тел и веществ, несущих признаки генетически чужеродной для него информации.","Способ защиты организма от повреждающих влияний нарушенного обмена веществ."],c:[2]},
 {id:178,m:1,q:"Какие виды иммунитета вы знаете?",o:["Врожденный","Патологический","Приобретенный","Физиологический"],c:[0,2]},
 {id:179,m:0,q:"Что такое врожденный иммунитет?",o:["Возникающий в результате вакцинации","Возникающий в результате введения иммунной сыворотки","Комплекс реакций, для формирования которых не требуется предварительный контакт иммунной системы с соответствующим антигеном","Возникающий после перенесенного какого-либо инфекционного заболевания"],c:[2]},
+Продолжение кода ровно со 180-го вопроса и до самого конца файла (при склейке
+замени оборванную строчку {id:180... на первую строчку из этого куска):
+
 {id:180,m:1,q:"Какими факторами обеспечивается реализация механизмов врожденного иммунитета?",o:["Антитела матери, поступающие в организм плода через плаценту","Гранулоциты крови","Моноциты и макрофаги, интерфероны","Натуральные киллеры, лизоцим","Система комплемента, белки острой фазы"],c:[0,1,2,3,4]},
 {id:181,m:1,q:"Приобретенный (адаптивный) иммунитет подразделяется на:",o:["Врожденный","Естественный","Приобретенный","Искусственный"],c:[1,3]},
 {id:182,m:0,q:"В результате чего возникает естественный приобретенный иммунитет?",o:["Вакцинации","Введения иммунной сыворотки","Передачи в период внутриутробного развития антител от матери к плоду трансплацентарным путем","Перенесения какого-либо инфекционного заболевания"],c:[3]},
@@ -549,7 +453,6 @@ const RAW_PATHOPHYS_QUESTIONS = [
 {id:353,m:1,q:"Перечислите причины запаздывающего и неэффективного иммунного ответа организма при возникновении злокачественных новообразований:",o:["Баланс взаимодействия иммунной системы и опухоли определяется генетически","Скорость роста опухоли отстает от скорости развития иммунного ответа","«Противоопухолевые» рецепторы В-лимфоцитов блокируются опухолевыми антигенами циркулирующими в крови","«Противоопухолевые» рецепторы Т-лимфоцитов блокируются опухолевыми антигенами циркулирующими в крови","Скорость роста опухоли опережает скорость развития иммунного ответа"],c:[0,3,4]},
 {id:354,m:1,q:"Укажите характерные особенности взаимоотношений опухоли и организма:",o:["Опухоли на любой стадии развития абсолютно автономны и не подчиняются нервным и эндокринным влияниям","Опухоли подчиняются только нервным влияниям","Опухоли подчиняются только гуморальным влияниям","На опухоли способны оказывать воздействие и нервная, и эндокринная системы","Возникновение злокачественной опухоли приводит к изменению активности эндокринных желез"],c:[3,4]},
 {id:355,m:1,q:"Какие феномены служат доказательством того, что при малигнизации клеток в их геноме происходят изменения?",o:["Слияние мембран клеточных органелл друг с другом и с плазмолеммой","Изменение липидного состава мембран опухолевых клеток","Нестандартное количество хромосом","Наличие филадельфийской хромосомы","«Сцепление» онкологических заболеваний с некоторыми особенностями генотипа"],c:[2,3,4]},
-// --- БЛОК «СТОМАТОЛОГИЯ» (ТЕМА 8: Патогенез воспалительных заболеваний полости рта — 30 вопросов, ID 356–385) ---
 {id:356,m:1,q:"Причинами пульпита являются следующие факторы:",o:["Бактериальные","Ятрогенные","Травматические","Химические"],c:[0,1,2,3]},
 {id:357,m:0,q:"Какой тип воспаления характерен для острого пульпита?",o:["Гиперергический","Нормергический","Гипоергический"],c:[0]},
 {id:358,m:1,q:"Какие особенности пульпы определяют характер ее воспалительной реакции?",o:["Почти полное отсутствие коллатерального кровообращения","Абсолютная достаточность коллатерального кровообращения","Расположение внутри неподатливой полости","Тесная взаимосвязь с десной, костной тканью альвеолы и цементом корня зуба посредством коллагеновых волокон"],c:[0,2]},
@@ -580,7 +483,6 @@ const RAW_PATHOPHYS_QUESTIONS = [
 {id:383,m:0,q:"Десквамативный глоссит - это:",o:["Воспалительно-дистрофическое заболевание слизистой оболочки языка, в ходе которого появляются участки чешуйчатого шелушения","Хроническая гиперплазия нитевидных сосочков, сопровождающаяся замедлением или отсутствием слущивания ороговевших клеток эпителия, которые принимают черный или коричневый цвет","Хроническое воспаление участка слизистой оболочки дистальной трети языка","Врожденная аномалия языка, является одним из симптомов синдрома Мелькерссона-Розенталя"],c:[0]},
 {id:384,m:0,q:"Складчатый (скротальный) язык - это:",o:["Воспалительно-дистрофическое заболевание слизистой оболочки языка, в ходе которого появляются участки чешуйчатого шелушения","Врожденная аномалия языка, является одним из симптомов синдрома Мелькерссона-Розенталя","Хроническая гиперплазия нитевидных сосочков, сопровождающаяся замедлением или отсутствием слущивания ороговевших клеток эпителия, которые принимают черный или коричневый цвет","Хроническое воспаление участка слизистой оболочки дистальной трети языка"],c:[1]},
 {id:385,m:0,q:"Ромбовидный глоссит - это:",o:["Хроническое воспаление участка слизистой оболочки дистальной трети языка","Врожденная аномалия языка, является одним из симптомов синдрома Мелькерссона-Розенталя","Воспалительно-дистрофическое заболевание слизистой оболочки языка, в ходе которого появляются участки чешуйчатого шелушения","Хроническая гиперплазия нитевидных сосочков, сопровождающаяся замедлением или отсутствием слущивания ороговевших клеток эпителия, которые принимают черный или коричневый цвет"],c:[0]},
-// --- БЛОК «СТОМАТОЛОГИЯ» (ТЕМА 9: Микрофлора полости рта. Кариес — 26 вопросов, ID 386–411) ---
 {id:386,m:1,q:"В состав нормальной микрофлоры полости рта входят:",o:["Бактерии","Грибы","Простейшие","Вирусы"],c:[0,1,2,3]},
 {id:387,m:1,q:"Укажите функции нормальной микрофлоры полости рта:",o:["Стимулирует развитие лимфоидной ткани","Поддерживает воспаление в слизистой оболочке и повышают готовность к иммунным реакциям","Подавляет размножение патогенных видов бактерий","Обеспечивает самоочищение ротовой полости"],c:[0,1,2,3]},
 {id:388,m:1,q:"На состав микрофлоры ротовой полости оказывают влияние следующие факторы:",o:["Состав пищи","Состояние иммунной системы","Гигиена полости рта","Состояние нервной системы"],c:[0,1,2,3]},
@@ -609,7 +511,6 @@ const RAW_PATHOPHYS_QUESTIONS = [
 {id:411,m:0,q:"Укажите клинические признаки кариеса цемента:",o:["Боль при температурном, механическом и химическом воздействии","Подвижность зубов во время еды","Неприятный запах изо рта"],c:[0]}
 ];
 
-// --- РАЗБИВКА 411 ВОПРОСОВ ПО ТЕМАМ 1-ГО КОЛЛОКВИУМА ---
 const TOPIC_RANGES = [
     { start: 1,   end: 31,  title: "1. Общая нозология, реактивность и старение" },
     { start: 32,  end: 76,  title: "2. Повреждение клетки, некроз и апоптоз" },
@@ -622,7 +523,6 @@ const TOPIC_RANGES = [
     { start: 386, end: 411, title: "9. Стоматология: Микрофлора полости рта. Кариес" }
 ];
 
-// --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 let QUESTIONS_DATA = [];
 let availableTopics = [];
 let accessData = null; 
@@ -636,7 +536,6 @@ let learnObserver = null;
 
 const tg = window.Telegram ? window.Telegram.WebApp : null;
 
-// --- ИНИЦИАЛИЗАЦИЯ TELEGRAM ---
 try { 
     if (tg) {
         tg.expand(); 
@@ -647,7 +546,6 @@ try {
     }
 } catch(e){}
 
-// --- HAPTIC & IOS SWIPE BACK ---
 function haptic(type='light') {
     try {
         if(tg && tg.HapticFeedback) {
@@ -683,7 +581,6 @@ function processQuestions() {
     if (!state.selectedTopics || state.selectedTopics.length === 0) {
         state.selectedTopics = [...availableTopics];
     } else {
-        // Фильтрация устаревших названий тем и автоподключение новых тем Стоматологии для тех, у кого были выбраны все 7 старых тем
         state.selectedTopics = state.selectedTopics.filter(t => availableTopics.includes(t));
         const oldTopics = availableTopics.slice(0, 7);
         const hadAllOldSelected = oldTopics.every(t => state.selectedTopics.includes(t));
@@ -696,7 +593,6 @@ function processQuestions() {
     }
 }
 
-// --- STATE ---
 const state = { 
     view: 'menu', isDark: false, showFilterModal: false, showResetModal: false, showConfirmResetDialog: false, 
     selectedTopics: [], resetSelectedTopics: [], userProgress: {}, resumeState: null, playableQuestions: [], 
@@ -705,7 +601,6 @@ const state = {
     searchQuery: '', filteredLearnQuestions: [], learnRenderLimit: 20, searchCurrentIndex: -1
 };
 
-// --- АВТОРИЗАЦИЯ И ОБЛАКО ---
 function getTelegramUserId() {
     try {
         if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) {
@@ -773,10 +668,13 @@ async function performAccessCheck() {
     }
     
     const ck = `${STORAGE_PREFIX}access_${currentUserId}`; 
+    const tgUser = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) || {};
+    const uName = encodeURIComponent(tgUser.first_name || "Студент");
+    const uHandle = encodeURIComponent(tgUser.username || "");
 
     try {
         const ctrl=new AbortController(); setTimeout(()=>ctrl.abort(),15000);
-        const res=await fetch(`${GOOGLE_SCRIPT_URL}?userId=${currentUserId}`,{signal:ctrl.signal});
+        const res=await fetch(`${GOOGLE_SCRIPT_URL}?userId=${currentUserId}&name=${uName}&username=${uHandle}`,{signal:ctrl.signal});
         const data=await res.json();
         
         if(data.allowed){ 
@@ -793,7 +691,7 @@ async function performAccessCheck() {
             localStorage.setItem(`${STORAGE_PREFIX}topics_${currentUserId}`, JSON.stringify(state.selectedTopics));
         } else {
             localStorage.removeItem(ck);
-            accessError={type:'denied', msg:'Доступ закрыт. Обратитесь к администратору.'};
+            accessError={type:'denied', msg:'Для открытия доступа отправьте чек об оплате (499 ₽) прямо в чат бота.'};
         }
     } catch(e){ 
         const c = localStorage.getItem(ck);
@@ -859,7 +757,7 @@ function checkStateTransition() {
         auth.classList.add('hidden-force'); block.classList.remove('hidden-force');
         let icon='alert-triangle', title='Ошибка', colorClass='text-rose-500', bgClass='bg-rose-100 dark:bg-rose-900/30';
         if(accessError.type==='denied'){icon='lock';title='Доступ закрыт';} else if(accessError.type==='browser'){icon='smartphone';title='Только в Telegram';}
-        block.innerHTML=`<div class="flex flex-col items-center justify-center h-full animate-fade-in px-4"><div class="${bgClass} p-6 rounded-full mb-6"><i data-lucide="${icon}" class="w-16 h-16 ${colorClass}"></i></div><h1 class="text-3xl font-black text-slate-900 dark:text-white mb-4">${title}</h1><p class="text-slate-500 dark:text-slate-400 mb-10 max-w-sm font-medium leading-relaxed">${accessError.msg}</p>${accessError.type==='denied'?`<a href="https://t.me/stewonly" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold text-center shadow-lg btn-click transition-transform active:scale-95">Связаться с админом</a>`:`<button onclick="window.location.reload()" class="w-full max-w-xs bg-slate-900 dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click">Попробовать снова</button>`}</div>`;
+        block.innerHTML=`<div class="flex flex-col items-center justify-center h-full animate-fade-in px-4"><div class="${bgClass} p-6 rounded-full mb-6"><i data-lucide="${icon}" class="w-16 h-16 ${colorClass}"></i></div><h1 class="text-3xl font-black text-slate-900 dark:text-white mb-4">${title}</h1><p class="text-slate-500 dark:text-slate-400 mb-8 max-w-sm font-medium leading-relaxed">${accessError.msg}</p>${accessError.type==='denied'?`<button onclick="try{window.Telegram.WebApp.close()}catch(e){}" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold text-center shadow-lg btn-click transition-transform active:scale-95 mb-3">🧾 Отправить чек в бота</button><a href="https://t.me/stewonly" class="w-full max-w-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3.5 rounded-2xl font-bold text-sm text-center btn-click">Написать @stewonly</a>`:`<button onclick="window.location.reload()" class="w-full max-w-xs bg-slate-900 dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click">Попробовать снова</button>`}</div>`;
         lucide.createIcons(); return; 
     }
     if(accessData){
@@ -870,7 +768,6 @@ function checkStateTransition() {
 
 function initApp() { state.resumeState = null; render(); }
 
-// --- THEME & UTILS ---
 function toggleTheme() {
     haptic('light'); state.isDark = !state.isDark;
     const body=document.documentElement, auth=document.getElementById('auth-screen'), block=document.getElementById('block-screen');
@@ -993,7 +890,6 @@ function updateSelectAllButtonUI(mode) {
     lucide.createIcons();
 }
 
-// --- РЕЖИМЫ (Start Mode) ---
 function startMode(mode, resume=false) {
     haptic('medium');
     if(resume && (!state.playableQuestions || state.playableQuestions.length === 0)) resume = false;
@@ -1080,7 +976,6 @@ function goHome() {
     state.view='menu'; render();
 }
 
-// === ПОИСК ПО КОНСПЕКТУ ===
 function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); 
 }
@@ -1233,7 +1128,6 @@ function renderLearnList() {
     }
 }
 
-// --- RENDERING ---
 function render() {
     const app=document.getElementById('app');
     let scrollTop=0; const cd=document.querySelector('.layout-content');
@@ -1321,7 +1215,7 @@ function renderLearnContent() {
     
     return `<div class="px-4 pt-2 h-full flex flex-col animate-fade-in gap-2">
         <div class="flex gap-2 items-center shrink-0 z-20 bg-slate-50 dark:bg-black pb-1">
-            <div class="relative flex-1">
+        <div class="relative flex-1">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="search" class="w-4 h-4 text-slate-400"></i></div>
                 <input id="learn-search-input" type="text" 
                     value="${state.searchQuery}"
@@ -1620,10 +1514,12 @@ function animateCard(dir) {
 }
 function toggleFlip() { haptic('light'); state.isFlipped = !state.isFlipped; const inner = document.getElementById('card-inner'); if (inner) { if (state.isFlipped) inner.classList.add('rotate-y-180'); else inner.classList.remove('rotate-y-180'); } }
 
-// --- ЗАПУСК ПРИЛОЖЕНИЯ ---
+// --- ЗАПУСК ПРИЛОЖЕНИЯ (СРАЗУ ПРОВЕРЯЕТ ТАБЛИЦУ БЕЗ ОЖИДАНИЯ ЗАСТАВКИ) ---
 if (USE_AUTH) {
-    document.getElementById('intro-layer').classList.remove('hidden-force');
+    videoFinished = true;
+    document.getElementById('auth-screen').classList.remove('hidden-force');
     document.getElementById('app').classList.add('hidden-force');
+    performAccessCheck();
 } else {
     loadLocalFallback();
     processQuestions();
@@ -1632,3 +1528,4 @@ if (USE_AUTH) {
 </script>
 </body>
 </html>
+
