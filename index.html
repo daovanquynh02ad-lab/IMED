@@ -537,6 +537,14 @@ try {
 
 function safeIcons() { try { if (window.lucide) lucide.createIcons(); } catch(e) {} }
 
+let localLoaded = false, serverSynced = false, localDirty = false, saveVer = 0, saveTimer = null;
+
+function persistLocal() {
+    try {
+        localStorage.setItem(`${STORAGE_PREFIX}progress_${currentUserId}`, JSON.stringify({ progress: state.userProgress, selectedTopics: state.selectedTopics, dirty: localDirty }));
+    } catch(e) {}
+}
+
 function loadLocalFallback() {
     try {
         const raw = localStorage.getItem(`${STORAGE_PREFIX}progress_${currentUserId}`);
@@ -545,29 +553,44 @@ function loadLocalFallback() {
             if (p && typeof p === 'object') {
                 if (p.progress) state.userProgress = p.progress;
                 if (p.selectedTopics) state.selectedTopics = p.selectedTopics;
+                localDirty = !!p.dirty;
             }
         }
     } catch(e) {}
 }
 
-let saveTimer = null;
+// Сервер — источник правды; если на телефоне есть несинхронизированные ответы, берём по каждому вопросу версию с большим числом попыток
+function applyServerData(data) {
+    const server = (data.progress && typeof data.progress === 'object') ? data.progress : {};
+    if (localDirty) {
+        const merged = Object.assign({}, server);
+        for (const [id, lp] of Object.entries(state.userProgress || {})) {
+            const sp = server[id];
+            if (!sp || (lp.attempts || 0) > (sp.attempts || 0)) merged[id] = lp;
+        }
+        state.userProgress = merged;
+    } else {
+        state.userProgress = server;
+        if (Array.isArray(data.selectedTopics) && data.selectedTopics.length) state.selectedTopics = data.selectedTopics;
+    }
+}
+
 function saveProgressToCloud() {
-    try {
-        localStorage.setItem(`${STORAGE_PREFIX}progress_${currentUserId}`, JSON.stringify({ progress: state.userProgress, selectedTopics: state.selectedTopics }));
-    } catch(e) {}
-    if (!currentUserId || window.location.protocol === 'file:') return;
+    localDirty = true;
+    persistLocal();
+    // пока не получили данные с сервера — не отправляем, чтобы не затереть чужой прогресс
+    if (!serverSynced || !currentUserId || window.location.protocol === 'file:') return;
     clearTimeout(saveTimer);
+    const ver = ++saveVer;
     saveTimer = setTimeout(async () => {
-        if (isSaving) return;
-        isSaving = true;
         try {
             await fetch(GOOGLE_SCRIPT_URL, {
                 method: 'POST', mode: 'no-cors',
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'save', userId: currentUserId, progress: state.userProgress, selectedTopics: state.selectedTopics })
+                body: JSON.stringify({ action: 'save', userId: String(currentUserId), progress: state.userProgress, selectedTopics: state.selectedTopics })
             });
+            if (ver === saveVer) { localDirty = false; persistLocal(); }
         } catch(e) {}
-        isSaving = false;
     }, 800);
 }
 
@@ -671,6 +694,7 @@ function finishVideo() { videoFinished = true; checkStateTransition(); }
 let accessCheckAttempts = 0;
 async function performAccessCheck() {
     currentUserId = getTelegramUserId();
+    if (currentUserId && !localLoaded) { localLoaded = true; loadLocalFallback(); }
 
     // ⚡ 1. МГНОВЕННЫЙ ВХОД ИЗ ПАМЯТИ ТЕЛЕФОНА (0.01 сек!)
     const ck = `${STORAGE_PREFIX}access_${currentUserId}`; 
@@ -680,7 +704,6 @@ async function performAccessCheck() {
             const p = JSON.parse(cached);
             if (p && p.allowed) {
                 accessData = p;
-                loadLocalFallback();
                 processQuestions();
                 checkStateTransition(); // Открывает приложение сразу после видео!
             }
@@ -714,18 +737,18 @@ async function performAccessCheck() {
 
     try {
         const ctrl = new AbortController();
-        setTimeout(() => ctrl.abort(), 8000);
+        setTimeout(() => ctrl.abort(), 15000);
         const res = await fetch(`${GOOGLE_SCRIPT_URL}?userId=${currentUserId}&name=${uName}&username=${uHandle}`, { signal: ctrl.signal });
         const data = await res.json();
         
         if (data.allowed) { 
             accessData = data; 
-            if (data.progress && Object.keys(data.progress).length) state.userProgress = Object.assign({}, state.userProgress, data.progress);
-            if (data.selectedTopics) state.selectedTopics = data.selectedTopics;
+            applyServerData(data);
             
             processQuestions();
-            localStorage.setItem(ck, JSON.stringify(data)); 
-            saveProgressToCloud();
+            localStorage.setItem(ck, JSON.stringify({ allowed: true })); 
+            serverSynced = true;
+            if (localDirty) saveProgressToCloud();
         } else {
             localStorage.removeItem(ck);
             accessError = { type: 'denied', msg: 'Для открытия доступа отправьте чек об оплате (499 ₽) прямо в чат бота.' };
@@ -764,7 +787,9 @@ function checkStateTransition() {
                 </div>
                 <h1 class="text-3xl font-black text-slate-900 dark:text-white mb-4">${title}</h1>
                 <p class="text-slate-500 dark:text-slate-400 mb-8 max-w-sm font-medium leading-relaxed">${accessError.msg}</p>
-                <button onclick="try{window.Telegram.WebApp.close()}catch(e){}" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click mb-3">🧾 Отправить чек в бота</button>
+                ${accessError.type === 'denied'
+                    ? `<button onclick="try{window.Telegram.WebApp.close()}catch(e){}" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click mb-3">🧾 Отправить чек в бота</button>`
+                    : `<button onclick="location.reload()" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click mb-3">Повторить</button>`}
                 <a href="https://t.me/stewonly" class="w-full max-w-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3.5 rounded-2xl font-bold text-sm text-center btn-click">Написать @stewonly</a>
             </div>`;
             safeIcons();
@@ -788,6 +813,9 @@ function checkStateTransition() {
             app.classList.remove('hidden-force'); 
             initApp(); 
         }
+    } else if (!accessData) {
+        if (intro) intro.style.display = 'none';
+        if (auth) auth.classList.remove('hidden-force');
     }
 }
 
@@ -1091,14 +1119,12 @@ function scrollToCurrentMatch() {
 
 function highlightText(text, query) {
     if (!query || !query.trim()) return text;
-    const words = query.trim().split(/\s+/).filter(w => w.length > 0);
-    let highlighted = text;
-    words.forEach(w => {
-        const escaped = escapeRegExp(w);
-        const regex = new RegExp(`(${escaped})`, 'gi');
-        highlighted = highlighted.replace(regex, '<mark>$1</mark>');
-    });
-    return highlighted;
+    const words = query.trim().split(/\s+/).filter(w => w.length > 0).map(escapeRegExp);
+    const re = new RegExp('(' + words.join('|') + ')', 'gi');
+    // split into entities and plain text, highlight only plain text
+    return text.split(/(&(?:amp|lt|gt|quot|#\d+);)/).map((part, i) =>
+        i % 2 === 1 ? part : part.replace(re, '<mark>$1</mark>')
+    ).join('');
 }
 
 function renderLearnList() {
