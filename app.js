@@ -1,6 +1,7 @@
 const USE_AUTH = true;
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzn9ttSMjIDz041CJWVnbla1pdf7qCh50hb8XUoybc_Le2iND9O57OuJ4IK9Zx5Uv52/exec";
 const STORAGE_PREFIX = "imed_pathophys_col1_";
+const ACCESS_POLL_INTERVAL_MS = 15000; // Фоновая проверка доступа каждые 15 секунд
 
 let QUESTIONS_DATA = [];
 let availableTopics = [];
@@ -8,6 +9,8 @@ let accessData = null;
 let videoFinished = false; 
 let accessError = null;
 let currentUserId = null;
+let accessPollTimer = null;
+let isCheckingAccess = false;
 
 let searchDebounceTimer = null;
 let learnObserver = null;
@@ -26,15 +29,14 @@ try {
 
 function safeIcons() { try { if (window.lucide) lucide.createIcons(); } catch(e) {} }
 
-let localLoaded = false, serverSynced = false, localDirty = false, saveVer = 0, saveTimer = null;
+let localLoaded = false;
 
 function persistLocal() {
     if (!currentUserId) return;
     try {
         localStorage.setItem(`${STORAGE_PREFIX}progress_${currentUserId}`, JSON.stringify({
             progress: state.userProgress,
-            selectedTopics: state.selectedTopics,
-            dirty: localDirty
+            selectedTopics: state.selectedTopics
         }));
     } catch(e) {}
 }
@@ -42,61 +44,21 @@ function persistLocal() {
 function loadLocalFallback() {
     if (!currentUserId) return;
     try {
+        // Удаляем устаревший ключ кэша доступа, если он остался с прошлых версий
+        localStorage.removeItem(`${STORAGE_PREFIX}access_${currentUserId}`);
         const raw = localStorage.getItem(`${STORAGE_PREFIX}progress_${currentUserId}`);
         if (raw) {
             const p = JSON.parse(raw);
             if (p && typeof p === 'object') {
                 if (p.progress) state.userProgress = p.progress;
                 if (Array.isArray(p.selectedTopics) && p.selectedTopics.length) state.selectedTopics = p.selectedTopics;
-                localDirty = !!p.dirty;
             }
         }
     } catch(e) {}
 }
 
-function applyServerData(data) {
-    if (!data || typeof data !== 'object') return;
-    const server = (data.progress && typeof data.progress === 'object') ? data.progress : null;
-    if (!server) return;
-
-    if (localDirty) {
-        const merged = Object.assign({}, server);
-        for (const [id, lp] of Object.entries(state.userProgress || {})) {
-            const sp = server[id];
-            if (!sp || (lp.attempts || 0) > (sp.attempts || 0)) merged[id] = lp;
-        }
-        state.userProgress = merged;
-    } else if (Object.keys(server).length > 0 || Object.keys(state.userProgress || {}).length === 0) {
-        state.userProgress = server;
-        if (Array.isArray(data.selectedTopics) && data.selectedTopics.length) {
-            state.selectedTopics = data.selectedTopics;
-        }
-    }
-    persistLocal();
-}
-
 function saveProgressToCloud() {
-    localDirty = true;
     persistLocal();
-    if (!serverSynced || !currentUserId || window.location.protocol === 'file:') return;
-    clearTimeout(saveTimer);
-    const ver = ++saveVer;
-    saveTimer = setTimeout(async () => {
-        try {
-            await fetch(GOOGLE_SCRIPT_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({
-                    action: 'save',
-                    userId: String(currentUserId),
-                    progress: state.userProgress,
-                    selectedTopics: state.selectedTopics
-                })
-            });
-            if (ver === saveVer) { localDirty = false; persistLocal(); }
-        } catch(e) {}
-    }, 1000);
 }
 
 function haptic(type='light') {
@@ -114,6 +76,12 @@ document.addEventListener('touchend', (e)=>{if(!window.sw)return;const ex=e.chan
 function escapeHtml(t) { if(!t)return""; return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
 function processQuestions() {
+    if (!accessData || !accessData.allowed) {
+        QUESTIONS_DATA = [];
+        availableTopics = [];
+        state.playableQuestions = [];
+        return;
+    }
     QUESTIONS_DATA = RAW_PATHOPHYS_QUESTIONS.map((q) => {
         const t = TOPIC_RANGES.find(r => q.id >= r.start && q.id <= r.end) || TOPIC_RANGES[0];
         const qText = escapeHtml(q.q);
@@ -144,6 +112,14 @@ function processQuestions() {
             state.selectedTopics = [...availableTopics];
         }
     }
+}
+
+function clearProtectedContent() {
+    QUESTIONS_DATA = [];
+    availableTopics = [];
+    state.playableQuestions = [];
+    state.filteredLearnQuestions = [];
+    state.resumeState = null;
 }
 
 const state = { 
@@ -184,26 +160,21 @@ function getTelegramUserId() {
     return null;
 }
 
-function finishVideo() { videoFinished = true; checkStateTransition(); }
+// Видео завершается ТОЛЬКО через эту функцию — проверка доступа никогда не обрывает видео
+function finishVideo() {
+    if (videoFinished) return;
+    videoFinished = true;
+    checkStateTransition();
+}
 
 let accessCheckAttempts = 0;
 async function performAccessCheck() {
-    currentUserId = getTelegramUserId();
-    if (currentUserId && !localLoaded) { localLoaded = true; loadLocalFallback(); }
+    if (isCheckingAccess) return;
 
-    // ⚡ 1. МГНОВЕННЫЙ ВХОД ИЗ ПАМЯТИ ТЕЛЕФОНА (0.01 сек, без ожидания видео!)
-    const ck = `${STORAGE_PREFIX}access_${currentUserId}`; 
-    const cached = currentUserId ? localStorage.getItem(ck) : null;
-    if (cached) {
-        try {
-            const p = JSON.parse(cached);
-            if (p && p.allowed) {
-                accessData = p;
-                videoFinished = true;
-                processQuestions();
-                checkStateTransition();
-            }
-        } catch(e) {}
+    currentUserId = getTelegramUserId();
+    if (currentUserId && !localLoaded) {
+        localLoaded = true;
+        loadLocalFallback();
     }
 
     if (!currentUserId && accessCheckAttempts < 5) {
@@ -212,23 +183,18 @@ async function performAccessCheck() {
         return;
     }
 
-    if (window.location.protocol === 'file:') { 
-        accessData = { allowed: true };
-        videoFinished = true;
-        loadLocalFallback();
-        processQuestions();
-        checkStateTransition();
-        return;
-    }
-    
     if (!currentUserId) { 
+        accessData = null;
+        clearProtectedContent();
         accessError = { type: 'browser', msg: 'Откройте приложение внутри Telegram бота.' };
-        videoFinished = true;
         checkStateTransition();
         return;
     }
-    
-    // ⚡ 2. ФОНОВАЯ ПРОВЕРКА ЧЕРЕЗ СЕРВЕР
+
+    // Очищаем любой старый кэш доступа в браузере, чтобы статус брался строго с сервера
+    try { localStorage.removeItem(`${STORAGE_PREFIX}access_${currentUserId}`); } catch(e) {}
+
+    isCheckingAccess = true;
     const tgUser = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) || {};
     const uName = encodeURIComponent(tgUser.first_name || "Студент");
     const uHandle = encodeURIComponent(tgUser.username || "");
@@ -236,39 +202,41 @@ async function performAccessCheck() {
     try {
         const ctrl = new AbortController();
         const tid = setTimeout(() => ctrl.abort(), 10000);
-        const res = await fetch(`${GOOGLE_SCRIPT_URL}?userId=${currentUserId}&name=${uName}&username=${uHandle}&_t=${Date.now()}`, { signal: ctrl.signal });
+        const res = await fetch(
+            `${GOOGLE_SCRIPT_URL}?mode=check&userId=${encodeURIComponent(currentUserId)}&name=${uName}&username=${uHandle}&_t=${Date.now()}`,
+            { signal: ctrl.signal, cache: 'no-store' }
+        );
         clearTimeout(tid);
         const data = await res.json();
         
-        if (data.allowed) { 
-            accessData = data; 
-            applyServerData(data);
+        if (data && data.allowed === true) { 
+            accessError = null;
+            accessData = { allowed: true }; 
             processQuestions();
-            localStorage.setItem(ck, JSON.stringify({ allowed: true })); 
-            serverSynced = true;
-            if (localDirty) saveProgressToCloud();
-            videoFinished = true;
-            if (appStarted) render();
         } else {
-            localStorage.removeItem(ck);
+            // Доступ запрещён (false или пользователь удалён из таблицы)
             accessData = null;
-            videoFinished = true;
+            clearProtectedContent();
             accessError = { type: 'denied', msg: 'Для открытия доступа отправьте чек об оплате (499 ₽) прямо в чат бота.' };
-            const appEl = document.getElementById('app');
-            if (appEl) appEl.classList.add('hidden-force');
         }
     } catch(e) { 
-        if (!accessData) {
-            videoFinished = true;
-            accessError = { type: 'network', msg: 'Ошибка сети. Проверьте интернет.' };
+        // При ошибке сети не выдаём доступ по старым данным, если он не был подтверждён в текущей сессии
+        if (!accessData || !accessData.allowed) {
+            accessData = null;
+            clearProtectedContent();
+            accessError = { type: 'network', msg: 'Ошибка сети. Проверьте подключение к интернету.' };
         }
+    } finally {
+        isCheckingAccess = false;
     }
     
+    // Переключаем экран (но если видео ещё идёт, checkStateTransition дождётся его окончания!)
     checkStateTransition();
 }
 
 let appStarted = false;
 function checkStateTransition() {
+    // 1. Ждём полного завершения видео независимо от статуса доступа
     if (!videoFinished) return; 
 
     const intro = document.getElementById('intro-layer');
@@ -276,10 +244,16 @@ function checkStateTransition() {
     const block = document.getElementById('block-screen');
     const app = document.getElementById('app');
 
+    // 2. Если доступ запрещён или отозван в процессе сессии
     if (accessError) { 
+        appStarted = false;
+        clearProtectedContent();
         if (intro) intro.style.display = 'none'; 
         if (auth) auth.classList.add('hidden-force'); 
-        if (app) app.classList.add('hidden-force');
+        if (app) {
+            app.classList.add('hidden-force');
+            app.innerHTML = '';
+        }
         if (block) {
             block.classList.remove('hidden-force');
             let icon = 'lock', title = 'Доступ закрыт';
@@ -291,8 +265,9 @@ function checkStateTransition() {
                 <h1 class="text-3xl font-black text-slate-900 dark:text-white mb-4">${title}</h1>
                 <p class="text-slate-500 dark:text-slate-400 mb-8 max-w-sm font-medium leading-relaxed">${accessError.msg}</p>
                 ${accessError.type === 'denied'
-                    ? `<button onclick="try{window.Telegram.WebApp.close()}catch(e){}" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click mb-3">🧾 Отправить чек в бота</button>`
-                    : `<button onclick="location.reload()" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click mb-3">Повторить</button>`}
+                    ? `<button onclick="try{window.Telegram.WebApp.close()}catch(e){}" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click mb-3">🧾 Отправить чек в бота</button>
+                       <button onclick="retryAccessCheck()" class="w-full max-w-xs bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200 py-3.5 rounded-2xl font-bold text-sm btn-click mb-3">🔄 Проверить доступ снова</button>`
+                    : `<button onclick="retryAccessCheck()" class="w-full max-w-xs bg-black dark:bg-white text-white dark:text-black py-4 rounded-2xl font-bold shadow-lg btn-click mb-3">Повторить</button>`}
                 <a href="https://t.me/stewonly" class="w-full max-w-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3.5 rounded-2xl font-bold text-sm text-center btn-click">Написать @stewonly</a>
             </div>`;
             safeIcons();
@@ -300,20 +275,54 @@ function checkStateTransition() {
         return; 
     }
 
-    if (accessData && !appStarted) {
-        appStarted = true;
+    // 3. Если доступ подтверждён сервером
+    if (accessData && accessData.allowed) {
         if (auth) auth.classList.add('hidden-force');
         if (block) block.classList.add('hidden-force');
+        if (intro && intro.style.display !== 'none') {
+            intro.style.transition = 'opacity 0.3s ease';
+            intro.style.opacity = '0';
+            setTimeout(() => { intro.style.display = 'none'; }, 300);
+        }
+        if (app) app.classList.remove('hidden-force');
+        if (!appStarted) {
+            appStarted = true;
+            initApp();
+        }
+    } else {
+        // 4. Видео уже закончилось, но ответ от сервера ещё ждём — показываем спиннер проверки
         if (intro) intro.style.display = 'none';
-        app.classList.remove('hidden-force'); 
-        initApp(); 
-    } else if (!accessData) {
-        if (intro) intro.style.display = 'none';
+        if (app) app.classList.add('hidden-force');
+        if (block) block.classList.add('hidden-force');
         if (auth) {
             auth.classList.remove('hidden-force');
             safeIcons();
         }
     }
+}
+
+function retryAccessCheck() {
+    haptic('light');
+    accessError = null;
+    accessData = null;
+    checkStateTransition();
+    performAccessCheck();
+}
+
+function startAccessPolling() {
+    if (!USE_AUTH) return;
+    if (accessPollTimer) clearInterval(accessPollTimer);
+    accessPollTimer = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+            performAccessCheck();
+        }
+    }, ACCESS_POLL_INTERVAL_MS);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            performAccessCheck();
+        }
+    });
 }
 
 function initApp() { state.resumeState = null; render(); }
@@ -416,6 +425,34 @@ function updateTopicListUI(mode) {
             let barBg = sel ? 'bg-white/20 dark:bg-black/20' : 'bg-slate-200 dark:bg-slate-700';
             let fillBg = sel ? 'bg-emerald-400 dark:bg-emerald-600' : 'bg-emerald-500';
             let txtColor = sel ? 'text-white/60 dark:text-black/60' : 'text-slate-400';
+            progressHtml = `<div class="w-full h-1.5 ${barBg} rounded-full mt-2 overflow-hidden"><div class="h-full ${fillBg} rounded-full" style="width: ${progress}%"></div></div><div class="text-[10px] ${txtColor} mt-1 flex justify-between">
+function updateTopicListUI(mode) {
+    const listId = mode === 'filter' ? 'topics-list' : 'reset-topics-list';
+    const list = document.getElementById(listId); if(!list) return;
+    const selectedArr = mode === 'filter' ? state.selectedTopics : state.resetSelectedTopics;
+
+    const stats = {};
+    if (mode === 'filter') {
+        QUESTIONS_DATA.forEach(q => {
+            if (!stats[q.topic]) stats[q.topic] = { total: 0, correct: 0 };
+            stats[q.topic].total++;
+            if (state.userProgress && state.userProgress[q.id]?.status === 'correct') stats[q.topic].correct++;
+        });
+    }
+
+    list.querySelectorAll('button[data-topic]').forEach(btn => {
+        const t = btn.getAttribute('data-topic');
+        const sel = selectedArr.includes(t);
+        const icon = btn.querySelector('.icon-area');
+        
+        let btnClass = "w-full text-left px-4 py-3 rounded-xl font-bold text-sm flex flex-col gap-1 group btn-click relative";
+        let progressHtml = '';
+        if (mode === 'filter' && stats[t]) {
+            const { total, correct } = stats[t];
+            const progress = total > 0 ? Math.round((correct / total) * 100) : 0;
+            let barBg = sel ? 'bg-white/20 dark:bg-black/20' : 'bg-slate-200 dark:bg-slate-700';
+            let fillBg = sel ? 'bg-emerald-400 dark:bg-emerald-600' : 'bg-emerald-500';
+            let txtColor = sel ? 'text-white/60 dark:text-black/60' : 'text-slate-400';
             progressHtml = `<div class="w-full h-1.5 ${barBg} rounded-full mt-2 overflow-hidden"><div class="h-full ${fillBg} rounded-full" style="width: ${progress}%"></div></div><div class="text-[10px] ${txtColor} mt-1 flex justify-between"><span>Прогресс (${correct}/${total})</span><span>${progress}%</span></div>`;
         }
 
@@ -441,6 +478,13 @@ function updateSelectAllButtonUI(mode) {
 }
 
 function startMode(mode, resume=false) {
+    if (USE_AUTH && (!accessData || !accessData.allowed)) {
+        checkStateTransition();
+        return;
+    }
+    // Фоновая сверка с таблицей при каждом входе в раздел
+    if (USE_AUTH) performAccessCheck();
+
     haptic('medium');
     if(resume && (!state.playableQuestions || state.playableQuestions.length === 0)) resume = false;
     if(resume && state.resumeState?.mode===mode){ state.playableQuestions = state.resumeState.questions; state.currentQuestionIndex = state.resumeState.index; state.view=mode; state.quizFinished=false; loadStateForIndex(state.currentQuestionIndex); render(); return; }
@@ -521,6 +565,7 @@ function prevQuestion() {
 }
 function goHome() {
     haptic('medium'); saveProgressToCloud();
+    if (USE_AUTH) performAccessCheck();
     if(['quiz','cards','mistakes'].includes(state.view) && !state.quizFinished && state.playableQuestions.length) state.resumeState={mode:state.view, index:state.currentQuestionIndex, questions:state.playableQuestions};
     else state.resumeState=null;
     state.view='menu'; render();
@@ -676,6 +721,10 @@ function renderLearnList() {
 }
 
 function render() {
+    if (USE_AUTH && (!accessData || !accessData.allowed)) {
+        checkStateTransition();
+        return;
+    }
     const app=document.getElementById('app');
     let scrollTop=0; const cd=document.querySelector('.layout-content');
     if(cd && app.dataset.view===state.view) scrollTop=cd.scrollTop;
@@ -1062,25 +1111,29 @@ function animateCard(dir) {
 function toggleFlip() { haptic('light'); state.isFlipped = !state.isFlipped; const inner = document.getElementById('card-inner'); if (inner) { if (state.isFlipped) inner.classList.add('rotate-y-180'); else inner.classList.remove('rotate-y-180'); } }
 
 // --- ЗАПУСК ПРИЛОЖЕНИЯ ---
+// Видео ВСЕГДА проигрывается до конца (onended), а проверка доступа идёт параллельно в фоне и никогда не прерывает видео.
 window.addEventListener('DOMContentLoaded', () => {
     const intro = document.getElementById('intro-layer');
     const video = document.getElementById('intro-video');
     let done = false;
     const finishOnce = () => { if (done) return; done = true; finishVideo(); };
 
-    const uid = getTelegramUserId();
-    const hasCachedAccess = uid && localStorage.getItem(`${STORAGE_PREFIX}access_${uid}`);
-
-    if (hasCachedAccess) {
-        finishOnce();
-    } else if (intro && video) {
+    if (intro && video) {
         intro.classList.remove('hidden-force');
         video.muted = true;
         const src = video.querySelector('source');
+        // Если самого файла видео нет или он повреждён — не зависаем
         if (src) src.addEventListener('error', finishOnce);
         video.addEventListener('error', finishOnce);
+        // Основной триггер завершения — строго окончание воспроизведения видео
         video.addEventListener('ended', finishOnce);
-        setTimeout(finishOnce, 2500);
+        video.addEventListener('loadedmetadata', () => {
+            if (isFinite(video.duration) && video.duration > 0) {
+                setTimeout(finishOnce, (video.duration + 1.5) * 1000);
+            }
+        });
+        // Страховка только на случай, если видео вообще не начало грузиться (нет файла)
+        setTimeout(() => { if (video.readyState < 1) finishOnce(); }, 4000);
         const pr = video.play();
         if (pr && pr.catch) pr.catch(finishOnce);
     } else {
@@ -1089,10 +1142,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
     if (USE_AUTH) {
         performAccessCheck();
+        startAccessPolling();
     } else {
         loadLocalFallback();
-        processQuestions();
         accessData = { allowed: true };
+        processQuestions();
         checkStateTransition();
     }
 });
