@@ -8,7 +8,6 @@ let accessData = null;
 let videoFinished = false; 
 let accessError = null;
 let currentUserId = null;
-let isSaving = false;
 
 let searchDebounceTimer = null;
 let learnObserver = null;
@@ -25,64 +24,36 @@ try {
     }
 } catch(e){}
 
-
 function safeIcons() { try { if (window.lucide) lucide.createIcons(); } catch(e) {} }
 
-let localLoaded = false, serverSynced = false, localDirty = false, saveVer = 0, saveTimer = null;
+let localLoaded = false;
 
 function persistLocal() {
+    if (!currentUserId) return;
     try {
-        localStorage.setItem(`${STORAGE_PREFIX}progress_${currentUserId}`, JSON.stringify({ progress: state.userProgress, selectedTopics: state.selectedTopics, dirty: localDirty }));
+        localStorage.setItem(`${STORAGE_PREFIX}progress_${currentUserId}`, JSON.stringify({
+            progress: state.userProgress,
+            selectedTopics: state.selectedTopics
+        }));
     } catch(e) {}
 }
 
 function loadLocalFallback() {
+    if (!currentUserId) return;
     try {
         const raw = localStorage.getItem(`${STORAGE_PREFIX}progress_${currentUserId}`);
         if (raw) {
             const p = JSON.parse(raw);
             if (p && typeof p === 'object') {
                 if (p.progress) state.userProgress = p.progress;
-                if (p.selectedTopics) state.selectedTopics = p.selectedTopics;
-                localDirty = !!p.dirty;
+                if (Array.isArray(p.selectedTopics) && p.selectedTopics.length) state.selectedTopics = p.selectedTopics;
             }
         }
     } catch(e) {}
 }
 
-// Сервер — источник правды; если на телефоне есть несинхронизированные ответы, берём по каждому вопросу версию с большим числом попыток
-function applyServerData(data) {
-    const server = (data.progress && typeof data.progress === 'object') ? data.progress : {};
-    if (localDirty) {
-        const merged = Object.assign({}, server);
-        for (const [id, lp] of Object.entries(state.userProgress || {})) {
-            const sp = server[id];
-            if (!sp || (lp.attempts || 0) > (sp.attempts || 0)) merged[id] = lp;
-        }
-        state.userProgress = merged;
-    } else {
-        state.userProgress = server;
-        if (Array.isArray(data.selectedTopics) && data.selectedTopics.length) state.selectedTopics = data.selectedTopics;
-    }
-}
-
 function saveProgressToCloud() {
-    localDirty = true;
     persistLocal();
-    // пока не получили данные с сервера — не отправляем, чтобы не затереть чужой прогресс
-    if (!serverSynced || !currentUserId || window.location.protocol === 'file:') return;
-    clearTimeout(saveTimer);
-    const ver = ++saveVer;
-    saveTimer = setTimeout(async () => {
-        try {
-            await fetch(GOOGLE_SCRIPT_URL, {
-                method: 'POST', mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action: 'save', userId: String(currentUserId), progress: state.userProgress, selectedTopics: state.selectedTopics })
-            });
-            if (ver === saveVer) { localDirty = false; persistLocal(); }
-        } catch(e) {}
-    }, 800);
 }
 
 function haptic(type='light') {
@@ -170,16 +141,6 @@ function getTelegramUserId() {
     return null;
 }
 
-async function userClickedStart() {
-    haptic('medium'); 
-    const txt = document.getElementById('start-text'); if(txt) txt.remove();
-    const vid = document.getElementById('intro-video');
-    performAccessCheck();
-    let played = false;
-    try { vid.muted=false; await vid.play(); played = true; vid.onended=()=>{ finishVideo(); }; } catch(err){}
-    if (!played) finishVideo();
-}
-
 function finishVideo() { videoFinished = true; checkStateTransition(); }
 
 let accessCheckAttempts = 0;
@@ -187,7 +148,7 @@ async function performAccessCheck() {
     currentUserId = getTelegramUserId();
     if (currentUserId && !localLoaded) { localLoaded = true; loadLocalFallback(); }
 
-    // ⚡ 1. МГНОВЕННЫЙ ВХОД ИЗ ПАМЯТИ ТЕЛЕФОНА (0.01 сек!)
+    // ⚡ 1. МГНОВЕННЫЙ ВХОД ИЗ ПАМЯТИ ТЕЛЕФОНА (0.01 сек, без ожидания видео!)
     const ck = `${STORAGE_PREFIX}access_${currentUserId}`; 
     const cached = localStorage.getItem(ck);
     if (cached) {
@@ -195,8 +156,9 @@ async function performAccessCheck() {
             const p = JSON.parse(cached);
             if (p && p.allowed) {
                 accessData = p;
+                videoFinished = true;
                 processQuestions();
-                checkStateTransition(); // Открывает приложение сразу после видео!
+                checkStateTransition();
             }
         } catch(e) {}
     }
@@ -208,7 +170,8 @@ async function performAccessCheck() {
     }
 
     if (window.location.protocol === 'file:') { 
-        accessData = { allowed: true, progress: {} };
+        accessData = { allowed: true };
+        videoFinished = true;
         loadLocalFallback();
         processQuestions();
         checkStateTransition();
@@ -217,39 +180,39 @@ async function performAccessCheck() {
     
     if (!currentUserId) { 
         accessError = { type: 'browser', msg: 'Откройте приложение внутри Telegram бота.' };
+        videoFinished = true;
         checkStateTransition();
         return;
     }
     
-    // ⚡ 2. ФОНОВАЯ ПРОВЕРКА ЧЕРЕЗ СЕРВЕР (Идет пока играет видео)
+    // ⚡ 2. ФОНОВАЯ ПРОВЕРКА ЧЕРЕЗ СЕРВЕР
     const tgUser = (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) || {};
     const uName = encodeURIComponent(tgUser.first_name || "Студент");
     const uHandle = encodeURIComponent(tgUser.username || "");
 
     try {
         const ctrl = new AbortController();
-        setTimeout(() => ctrl.abort(), 15000);
+        setTimeout(() => ctrl.abort(), 10000);
         const res = await fetch(`${GOOGLE_SCRIPT_URL}?userId=${currentUserId}&name=${uName}&username=${uHandle}`, { signal: ctrl.signal });
         const data = await res.json();
         
         if (data.allowed) { 
             accessData = data; 
-            applyServerData(data);
-            
             processQuestions();
             localStorage.setItem(ck, JSON.stringify({ allowed: true })); 
-            serverSynced = true;
-            if (localDirty) saveProgressToCloud();
+            videoFinished = true;
             if (appStarted) render();
         } else {
             localStorage.removeItem(ck);
             accessData = null;
+            videoFinished = true;
             accessError = { type: 'denied', msg: 'Для открытия доступа отправьте чек об оплате (499 ₽) прямо в чат бота.' };
             const appEl = document.getElementById('app');
             if (appEl) appEl.classList.add('hidden-force');
         }
     } catch(e) { 
         if (!accessData) {
+            videoFinished = true;
             accessError = { type: 'network', msg: 'Ошибка сети. Проверьте интернет.' };
         }
     }
@@ -257,10 +220,8 @@ async function performAccessCheck() {
     checkStateTransition();
 }
 
-// ПЛАВНЫЙ ПЕРЕХОД: НИКАКИХ ЭКРАНОВ ЗАГРУЗКИ ПОСЛЕ ВИДЕО
 let appStarted = false;
 function checkStateTransition() {
-    // Ждем, пока видео ТОЧНО закончится
     if (!videoFinished) return; 
 
     const intro = document.getElementById('intro-layer');
@@ -268,7 +229,6 @@ function checkStateTransition() {
     const block = document.getElementById('block-screen');
     const app = document.getElementById('app');
 
-    // Если нет доступа (включая случай, когда кэш пустил, а сервер затем отказал)
     if (accessError) { 
         if (intro) intro.style.display = 'none'; 
         if (auth) auth.classList.add('hidden-force'); 
@@ -293,24 +253,12 @@ function checkStateTransition() {
         return; 
     }
 
-    // Если доступ есть — плавно растворяем видео и сразу открываем меню
     if (accessData && !appStarted) {
         appStarted = true;
         if (auth) auth.classList.add('hidden-force');
-        if (intro) { 
-            intro.style.transition = 'opacity 0.3s ease'; 
-            intro.style.opacity = '0'; 
-            setTimeout(() => {
-                intro.style.display = 'none';
-                if (!accessError) {
-                    app.classList.remove('hidden-force');
-                    initApp();
-                }
-            }, 300); 
-        } else { 
-            app.classList.remove('hidden-force'); 
-            initApp(); 
-        }
+        if (intro) intro.style.display = 'none';
+        app.classList.remove('hidden-force'); 
+        initApp(); 
     } else if (!accessData) {
         if (intro) intro.style.display = 'none';
         if (auth) auth.classList.remove('hidden-force');
@@ -619,7 +567,6 @@ function highlightText(text, query) {
     if (!query || !query.trim()) return text;
     const words = query.trim().split(/\s+/).filter(w => w.length > 0).map(escapeRegExp);
     const re = new RegExp('(' + words.join('|') + ')', 'gi');
-    // split into entities and plain text, highlight only plain text
     return text.split(/(&(?:amp|lt|gt|quot|#\d+);)/).map((part, i) =>
         i % 2 === 1 ? part : part.replace(re, '<mark>$1</mark>')
     ).join('');
@@ -1064,14 +1011,20 @@ function animateCard(dir) {
 function toggleFlip() { haptic('light'); state.isFlipped = !state.isFlipped; const inner = document.getElementById('card-inner'); if (inner) { if (state.isFlipped) inner.classList.add('rotate-y-180'); else inner.classList.remove('rotate-y-180'); } }
 
 // --- ЗАПУСК ПРИЛОЖЕНИЯ ---
-// --- ПАРАЛЛЕЛЬНЫЙ ЗАПУСК: ИНТРО ИГРАЕТ, ДОСТУП ПРОВЕРЯЕТСЯ В ФОНЕ ---
 window.addEventListener('DOMContentLoaded', () => {
     const intro = document.getElementById('intro-layer');
     const video = document.getElementById('intro-video');
     let done = false;
     const finishOnce = () => { if (done) return; done = true; finishVideo(); };
 
-    if (intro && video) {
+    // Проверяем, есть ли уже сохраненный доступ на телефоне
+    const uid = getTelegramUserId();
+    const hasCachedAccess = uid && localStorage.getItem(`${STORAGE_PREFIX}access_${uid}`);
+
+    if (hasCachedAccess) {
+        // Если студент уже заходил — не тратим время на видео, открываем сразу!
+        finishOnce();
+    } else if (intro && video) {
         intro.classList.remove('hidden-force');
         video.muted = true;
         const src = video.querySelector('source');
@@ -1081,7 +1034,7 @@ window.addEventListener('DOMContentLoaded', () => {
         video.addEventListener('loadedmetadata', () => {
             if (isFinite(video.duration)) setTimeout(finishOnce, (video.duration + 1) * 1000);
         });
-        setTimeout(() => { if (video.readyState < 1) finishOnce(); }, 4000);
+        setTimeout(() => { if (video.readyState < 1) finishOnce(); }, 2500);
         const pr = video.play();
         if (pr && pr.catch) pr.catch(finishOnce);
     } else {
