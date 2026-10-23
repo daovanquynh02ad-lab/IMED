@@ -1,7 +1,7 @@
 const USE_AUTH = true;
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzn9ttSMjIDz041CJWVnbla1pdf7qCh50hb8XUoybc_Le2iND9O57OuJ4IK9Zx5Uv52/exec";
 const STORAGE_PREFIX = "imed_pathophys_col1_";
-const ACCESS_POLL_INTERVAL_MS = 15000; // Фоновая проверка доступа каждые 15 секунд
+const ACCESS_POLL_INTERVAL_MS = 15000;
 
 let QUESTIONS_DATA = [];
 let availableTopics = [];
@@ -44,7 +44,6 @@ function persistLocal() {
 function loadLocalFallback() {
     if (!currentUserId) return;
     try {
-        // Удаляем устаревший ключ кэша доступа, если он остался с прошлых версий
         localStorage.removeItem(`${STORAGE_PREFIX}access_${currentUserId}`);
         const raw = localStorage.getItem(`${STORAGE_PREFIX}progress_${currentUserId}`);
         if (raw) {
@@ -160,7 +159,6 @@ function getTelegramUserId() {
     return null;
 }
 
-// Видео завершается ТОЛЬКО через эту функцию — проверка доступа никогда не обрывает видео
 function finishVideo() {
     if (videoFinished) return;
     videoFinished = true;
@@ -191,7 +189,6 @@ async function performAccessCheck() {
         return;
     }
 
-    // Очищаем любой старый кэш доступа в браузере, чтобы статус брался строго с сервера
     try { localStorage.removeItem(`${STORAGE_PREFIX}access_${currentUserId}`); } catch(e) {}
 
     isCheckingAccess = true;
@@ -214,13 +211,11 @@ async function performAccessCheck() {
             accessData = { allowed: true }; 
             processQuestions();
         } else {
-            // Доступ запрещён (false или пользователь удалён из таблицы)
             accessData = null;
             clearProtectedContent();
             accessError = { type: 'denied', msg: 'Для открытия доступа отправьте чек об оплате (499 ₽) прямо в чат бота.' };
         }
     } catch(e) { 
-        // При ошибке сети не выдаём доступ по старым данным, если он не был подтверждён в текущей сессии
         if (!accessData || !accessData.allowed) {
             accessData = null;
             clearProtectedContent();
@@ -230,13 +225,11 @@ async function performAccessCheck() {
         isCheckingAccess = false;
     }
     
-    // Переключаем экран (но если видео ещё идёт, checkStateTransition дождётся его окончания!)
     checkStateTransition();
 }
 
 let appStarted = false;
 function checkStateTransition() {
-    // 1. Ждём полного завершения видео независимо от статуса доступа
     if (!videoFinished) return; 
 
     const intro = document.getElementById('intro-layer');
@@ -244,7 +237,6 @@ function checkStateTransition() {
     const block = document.getElementById('block-screen');
     const app = document.getElementById('app');
 
-    // 2. Если доступ запрещён или отозван в процессе сессии
     if (accessError) { 
         appStarted = false;
         clearProtectedContent();
@@ -275,7 +267,6 @@ function checkStateTransition() {
         return; 
     }
 
-    // 3. Если доступ подтверждён сервером
     if (accessData && accessData.allowed) {
         if (auth) auth.classList.add('hidden-force');
         if (block) block.classList.add('hidden-force');
@@ -290,7 +281,6 @@ function checkStateTransition() {
             initApp();
         }
     } else {
-        // 4. Видео уже закончилось, но ответ от сервера ещё ждём — показываем спиннер проверки
         if (intro) intro.style.display = 'none';
         if (app) app.classList.add('hidden-force');
         if (block) block.classList.add('hidden-force');
@@ -425,34 +415,6 @@ function updateTopicListUI(mode) {
             let barBg = sel ? 'bg-white/20 dark:bg-black/20' : 'bg-slate-200 dark:bg-slate-700';
             let fillBg = sel ? 'bg-emerald-400 dark:bg-emerald-600' : 'bg-emerald-500';
             let txtColor = sel ? 'text-white/60 dark:text-black/60' : 'text-slate-400';
-            progressHtml = `<div class="w-full h-1.5 ${barBg} rounded-full mt-2 overflow-hidden"><div class="h-full ${fillBg} rounded-full" style="width: ${progress}%"></div></div><div class="text-[10px] ${txtColor} mt-1 flex justify-between">
-function updateTopicListUI(mode) {
-    const listId = mode === 'filter' ? 'topics-list' : 'reset-topics-list';
-    const list = document.getElementById(listId); if(!list) return;
-    const selectedArr = mode === 'filter' ? state.selectedTopics : state.resetSelectedTopics;
-
-    const stats = {};
-    if (mode === 'filter') {
-        QUESTIONS_DATA.forEach(q => {
-            if (!stats[q.topic]) stats[q.topic] = { total: 0, correct: 0 };
-            stats[q.topic].total++;
-            if (state.userProgress && state.userProgress[q.id]?.status === 'correct') stats[q.topic].correct++;
-        });
-    }
-
-    list.querySelectorAll('button[data-topic]').forEach(btn => {
-        const t = btn.getAttribute('data-topic');
-        const sel = selectedArr.includes(t);
-        const icon = btn.querySelector('.icon-area');
-        
-        let btnClass = "w-full text-left px-4 py-3 rounded-xl font-bold text-sm flex flex-col gap-1 group btn-click relative";
-        let progressHtml = '';
-        if (mode === 'filter' && stats[t]) {
-            const { total, correct } = stats[t];
-            const progress = total > 0 ? Math.round((correct / total) * 100) : 0;
-            let barBg = sel ? 'bg-white/20 dark:bg-black/20' : 'bg-slate-200 dark:bg-slate-700';
-            let fillBg = sel ? 'bg-emerald-400 dark:bg-emerald-600' : 'bg-emerald-500';
-            let txtColor = sel ? 'text-white/60 dark:text-black/60' : 'text-slate-400';
             progressHtml = `<div class="w-full h-1.5 ${barBg} rounded-full mt-2 overflow-hidden"><div class="h-full ${fillBg} rounded-full" style="width: ${progress}%"></div></div><div class="text-[10px] ${txtColor} mt-1 flex justify-between"><span>Прогресс (${correct}/${total})</span><span>${progress}%</span></div>`;
         }
 
@@ -482,7 +444,6 @@ function startMode(mode, resume=false) {
         checkStateTransition();
         return;
     }
-    // Фоновая сверка с таблицей при каждом входе в раздел
     if (USE_AUTH) performAccessCheck();
 
     haptic('medium');
@@ -1111,7 +1072,6 @@ function animateCard(dir) {
 function toggleFlip() { haptic('light'); state.isFlipped = !state.isFlipped; const inner = document.getElementById('card-inner'); if (inner) { if (state.isFlipped) inner.classList.add('rotate-y-180'); else inner.classList.remove('rotate-y-180'); } }
 
 // --- ЗАПУСК ПРИЛОЖЕНИЯ ---
-// Видео ВСЕГДА проигрывается до конца (onended), а проверка доступа идёт параллельно в фоне и никогда не прерывает видео.
 window.addEventListener('DOMContentLoaded', () => {
     const intro = document.getElementById('intro-layer');
     const video = document.getElementById('intro-video');
@@ -1122,17 +1082,14 @@ window.addEventListener('DOMContentLoaded', () => {
         intro.classList.remove('hidden-force');
         video.muted = true;
         const src = video.querySelector('source');
-        // Если самого файла видео нет или он повреждён — не зависаем
         if (src) src.addEventListener('error', finishOnce);
         video.addEventListener('error', finishOnce);
-        // Основной триггер завершения — строго окончание воспроизведения видео
         video.addEventListener('ended', finishOnce);
         video.addEventListener('loadedmetadata', () => {
             if (isFinite(video.duration) && video.duration > 0) {
                 setTimeout(finishOnce, (video.duration + 1.5) * 1000);
             }
         });
-        // Страховка только на случай, если видео вообще не начало грузиться (нет файла)
         setTimeout(() => { if (video.readyState < 1) finishOnce(); }, 4000);
         const pr = video.play();
         if (pr && pr.catch) pr.catch(finishOnce);
