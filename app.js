@@ -26,14 +26,15 @@ try {
 
 function safeIcons() { try { if (window.lucide) lucide.createIcons(); } catch(e) {} }
 
-let localLoaded = false;
+let localLoaded = false, serverSynced = false, localDirty = false, saveVer = 0, saveTimer = null;
 
 function persistLocal() {
     if (!currentUserId) return;
     try {
         localStorage.setItem(`${STORAGE_PREFIX}progress_${currentUserId}`, JSON.stringify({
             progress: state.userProgress,
-            selectedTopics: state.selectedTopics
+            selectedTopics: state.selectedTopics,
+            dirty: localDirty
         }));
     } catch(e) {}
 }
@@ -47,13 +48,55 @@ function loadLocalFallback() {
             if (p && typeof p === 'object') {
                 if (p.progress) state.userProgress = p.progress;
                 if (Array.isArray(p.selectedTopics) && p.selectedTopics.length) state.selectedTopics = p.selectedTopics;
+                localDirty = !!p.dirty;
             }
         }
     } catch(e) {}
 }
 
-function saveProgressToCloud() {
+function applyServerData(data) {
+    if (!data || typeof data !== 'object') return;
+    const server = (data.progress && typeof data.progress === 'object') ? data.progress : null;
+    if (!server) return;
+
+    if (localDirty) {
+        const merged = Object.assign({}, server);
+        for (const [id, lp] of Object.entries(state.userProgress || {})) {
+            const sp = server[id];
+            if (!sp || (lp.attempts || 0) > (sp.attempts || 0)) merged[id] = lp;
+        }
+        state.userProgress = merged;
+    } else if (Object.keys(server).length > 0 || Object.keys(state.userProgress || {}).length === 0) {
+        state.userProgress = server;
+        if (Array.isArray(data.selectedTopics) && data.selectedTopics.length) {
+            state.selectedTopics = data.selectedTopics;
+        }
+    }
     persistLocal();
+}
+
+function saveProgressToCloud() {
+    localDirty = true;
+    persistLocal();
+    if (!serverSynced || !currentUserId || window.location.protocol === 'file:') return;
+    clearTimeout(saveTimer);
+    const ver = ++saveVer;
+    saveTimer = setTimeout(async () => {
+        try {
+            await fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                    action: 'save',
+                    userId: String(currentUserId),
+                    progress: state.userProgress,
+                    selectedTopics: state.selectedTopics
+                })
+            });
+            if (ver === saveVer) { localDirty = false; persistLocal(); }
+        } catch(e) {}
+    }, 1000);
 }
 
 function haptic(type='light') {
@@ -150,7 +193,7 @@ async function performAccessCheck() {
 
     // ⚡ 1. МГНОВЕННЫЙ ВХОД ИЗ ПАМЯТИ ТЕЛЕФОНА (0.01 сек, без ожидания видео!)
     const ck = `${STORAGE_PREFIX}access_${currentUserId}`; 
-    const cached = localStorage.getItem(ck);
+    const cached = currentUserId ? localStorage.getItem(ck) : null;
     if (cached) {
         try {
             const p = JSON.parse(cached);
@@ -192,14 +235,18 @@ async function performAccessCheck() {
 
     try {
         const ctrl = new AbortController();
-        setTimeout(() => ctrl.abort(), 10000);
-        const res = await fetch(`${GOOGLE_SCRIPT_URL}?userId=${currentUserId}&name=${uName}&username=${uHandle}`, { signal: ctrl.signal });
+        const tid = setTimeout(() => ctrl.abort(), 10000);
+        const res = await fetch(`${GOOGLE_SCRIPT_URL}?userId=${currentUserId}&name=${uName}&username=${uHandle}&_t=${Date.now()}`, { signal: ctrl.signal });
+        clearTimeout(tid);
         const data = await res.json();
         
         if (data.allowed) { 
             accessData = data; 
+            applyServerData(data);
             processQuestions();
             localStorage.setItem(ck, JSON.stringify({ allowed: true })); 
+            serverSynced = true;
+            if (localDirty) saveProgressToCloud();
             videoFinished = true;
             if (appStarted) render();
         } else {
@@ -256,12 +303,16 @@ function checkStateTransition() {
     if (accessData && !appStarted) {
         appStarted = true;
         if (auth) auth.classList.add('hidden-force');
+        if (block) block.classList.add('hidden-force');
         if (intro) intro.style.display = 'none';
         app.classList.remove('hidden-force'); 
         initApp(); 
     } else if (!accessData) {
         if (intro) intro.style.display = 'none';
-        if (auth) auth.classList.remove('hidden-force');
+        if (auth) {
+            auth.classList.remove('hidden-force');
+            safeIcons();
+        }
     }
 }
 
@@ -1017,12 +1068,10 @@ window.addEventListener('DOMContentLoaded', () => {
     let done = false;
     const finishOnce = () => { if (done) return; done = true; finishVideo(); };
 
-    // Проверяем, есть ли уже сохраненный доступ на телефоне
     const uid = getTelegramUserId();
     const hasCachedAccess = uid && localStorage.getItem(`${STORAGE_PREFIX}access_${uid}`);
 
     if (hasCachedAccess) {
-        // Если студент уже заходил — не тратим время на видео, открываем сразу!
         finishOnce();
     } else if (intro && video) {
         intro.classList.remove('hidden-force');
@@ -1031,10 +1080,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (src) src.addEventListener('error', finishOnce);
         video.addEventListener('error', finishOnce);
         video.addEventListener('ended', finishOnce);
-        video.addEventListener('loadedmetadata', () => {
-            if (isFinite(video.duration)) setTimeout(finishOnce, (video.duration + 1) * 1000);
-        });
-        setTimeout(() => { if (video.readyState < 1) finishOnce(); }, 2500);
+        setTimeout(finishOnce, 2500);
         const pr = video.play();
         if (pr && pr.catch) pr.catch(finishOnce);
     } else {
