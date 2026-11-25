@@ -1,4 +1,4 @@
-const USE_AUTH = false; // Для теста в IMED-test = false. Перед переносом в основной IMED поменяй на true!
+const USE_AUTH = true; // Для теста в IMED-test = false. Перед переносом в основной IMED поменяй на true!
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzn9ttSMjIDz041CJWVnbla1pdf7qCh50hb8XUoybc_Le2iND9O57OuJ4IK9Zx5Uv52/exec";
 const ACCESS_POLL_INTERVAL_MS = 60000;
 
